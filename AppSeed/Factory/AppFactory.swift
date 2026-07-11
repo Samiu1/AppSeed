@@ -1,0 +1,215 @@
+import Foundation
+
+struct FactoryRequest {
+    var url: URL
+    var appName: String
+    var destinationDirectory: URL
+}
+
+enum CollisionDecision {
+    case overwrite
+    case autoRename
+    case cancel
+}
+
+enum FactoryError: LocalizedError {
+    case engineTemplateMissing
+    case cancelled
+    case plistUnreadable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .engineTemplateMissing:
+            return "The engine template (AppSeedEngine.app) is missing from AppSeed's resources. Reinstall AppSeed."
+        case .cancelled:
+            return "Cancelled."
+        case .plistUnreadable(let path):
+            return "Could not read Info.plist at \(path)."
+        }
+    }
+}
+
+/// The self-cloning engine. Clones the pre-compiled AppSeedEngine.app
+/// blueprint, injects configuration, swaps the icon, re-signs, and installs —
+/// all inside a temp directory, with only a finished bundle ever reaching the
+/// destination.
+final class AppFactory {
+    typealias ProgressHandler = (String) -> Void
+    typealias CollisionResolver = (String) async -> CollisionDecision
+
+    private let progress: ProgressHandler
+    private let resolveCollision: CollisionResolver
+    private let fileManager = FileManager.default
+
+    /// Default install location: ~/Applications, created on demand. Requires
+    /// no admin rights — /Applications is deliberately not the default
+    /// (Phase 0 decision). Point `FactoryRequest.destinationDirectory` at
+    /// /Applications only as an explicit opt-in.
+    static var defaultInstallDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true)
+    }
+
+    init(progress: @escaping ProgressHandler, resolveCollision: @escaping CollisionResolver) {
+        self.progress = progress
+        self.resolveCollision = resolveCollision
+    }
+
+    func build(_ request: FactoryRequest) async throws -> URL {
+        let engineTemplate = try locateEngineTemplate()
+        try fileManager.createDirectory(at: request.destinationDirectory, withIntermediateDirectories: true)
+
+        guard let destination = try await resolveDestination(for: request) else {
+            throw FactoryError.cancelled
+        }
+
+        // Build atomically: every mutation happens on a copy in a temp
+        // directory. Only a fully finished, signed bundle is moved into the
+        // destination — a half-built app must never appear launchable there.
+        let staging = fileManager.temporaryDirectory
+            .appendingPathComponent("appseed-build-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: staging) }
+
+        progress("Cloning engine…")
+        let staged = staging.appendingPathComponent("\(request.appName).app", isDirectory: true)
+        try fileManager.copyItem(at: engineTemplate, to: staged)
+
+        try renameExecutable(in: staged, to: request.appName)
+        try updateInfoPlist(in: staged, request: request)
+        try writeAppConfig(into: staged, request: request)
+        await installIcon(into: staged, request: request)
+
+        progress("Signing…")
+        try stripQuarantineAndSign(staged)
+
+        progress("Installing…")
+        try install(staged, at: destination)
+        refreshLaunchServices(for: destination)
+        return destination
+    }
+
+    // MARK: - Pipeline steps
+
+    private func locateEngineTemplate() throws -> URL {
+        guard let resources = Bundle.main.resourceURL else {
+            throw FactoryError.engineTemplateMissing
+        }
+        let template = resources.appendingPathComponent("Engine/AppSeedEngine.app", isDirectory: true)
+        let binary = template.appendingPathComponent("Contents/MacOS/AppSeedEngine")
+        guard fileManager.fileExists(atPath: binary.path) else {
+            throw FactoryError.engineTemplateMissing
+        }
+        return template
+    }
+
+    /// Name-collision handling: never silently overwrite.
+    private func resolveDestination(for request: FactoryRequest) async throws -> URL? {
+        let base = request.destinationDirectory
+        let preferred = base.appendingPathComponent("\(request.appName).app")
+        guard fileManager.fileExists(atPath: preferred.path) else { return preferred }
+
+        switch await resolveCollision(request.appName) {
+        case .cancel:
+            return nil
+        case .overwrite:
+            // Safe for logins: the bundle id is deterministic per domain, so
+            // the regenerated app keeps the old one's website data store.
+            return preferred
+        case .autoRename:
+            var counter = 2
+            var candidate = base.appendingPathComponent("\(request.appName) \(counter).app")
+            while fileManager.fileExists(atPath: candidate.path) {
+                counter += 1
+                candidate = base.appendingPathComponent("\(request.appName) \(counter).app")
+            }
+            return candidate
+        }
+    }
+
+    /// The binary itself is renamed — not just the plist. The menu bar (next
+    /// to the Apple logo), the Force Quit dialog, and Activity Monitor all
+    /// read the executable's name.
+    private func renameExecutable(in bundle: URL, to appName: String) throws {
+        let macOSDirectory = bundle.appendingPathComponent("Contents/MacOS", isDirectory: true)
+        let oldBinary = macOSDirectory.appendingPathComponent("AppSeedEngine")
+        let newBinary = macOSDirectory.appendingPathComponent(appName)
+        try fileManager.moveItem(at: oldBinary, to: newBinary)
+    }
+
+    private func updateInfoPlist(in bundle: URL, request: FactoryRequest) throws {
+        progress("Writing configuration…")
+        let plistURL = bundle.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plistURL),
+              var plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else {
+            throw FactoryError.plistUnreadable(plistURL.path)
+        }
+
+        plist["CFBundleExecutable"] = request.appName
+        plist["CFBundleName"] = request.appName
+        plist["CFBundleDisplayName"] = request.appName
+        // Deterministic per registrable domain — the same site always yields
+        // the same id, so WKWebsiteDataStore and Keychain survive
+        // regeneration. Never a UUID.
+        plist["CFBundleIdentifier"] = DomainUtils.bundleIdentifier(forHost: request.url.host ?? "site")
+
+        let output = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try output.write(to: plistURL)
+    }
+
+    private func writeAppConfig(into bundle: URL, request: FactoryRequest) throws {
+        let config = AppConfig(
+            appName: request.appName,
+            url: request.url.absoluteString,
+            bundleIdentifier: DomainUtils.bundleIdentifier(forHost: request.url.host ?? "site"),
+            window: .init(width: 1280, height: 800)
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let configURL = bundle.appendingPathComponent("Contents/Resources/AppConfig.json")
+        try encoder.encode(config).write(to: configURL)
+    }
+
+    /// Icon failure is non-fatal by design: the generated app keeps the
+    /// engine's default icon rather than failing the whole build.
+    private func installIcon(into bundle: URL, request: FactoryRequest) async {
+        progress("Fetching site icon…")
+        do {
+            try await IconBuilder.installIcon(for: request.url, into: bundle)
+        } catch {
+            progress("No site icon — using default")
+        }
+    }
+
+    private func stripQuarantineAndSign(_ bundle: URL) throws {
+        // Strip quarantine BEFORE codesign. If AppSeed itself was downloaded
+        // from the internet it carries com.apple.quarantine, and every cloned
+        // child bundle inherits it. Gatekeeper rejects a quarantined +
+        // ad-hoc-signed app with the "damaged, move to Trash" error — this
+        // xattr step is what prevents that. Do not remove or reorder; it is
+        // not a bug workaround, it is the signing model (Phase 0).
+        try ProcessRunner.run("/usr/bin/xattr", ["-cr", bundle.path])
+
+        // Ad-hoc re-sign, mandatory and last: the executable rename, plist
+        // edits, config write, and icon swap above all invalidated the
+        // engine's original signature.
+        try ProcessRunner.run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bundle.path])
+    }
+
+    private func install(_ staged: URL, at destination: URL) throws {
+        // Overwrite was explicitly confirmed in resolveDestination.
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: staged, to: destination)
+    }
+
+    /// Nudges Launch Services and Finder so the new app doesn't sit with a
+    /// stale generic icon. Best-effort — never fails the build.
+    private func refreshLaunchServices(for bundle: URL) {
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: bundle.path)
+        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        _ = try? ProcessRunner.run(lsregister, ["-f", bundle.path])
+    }
+}

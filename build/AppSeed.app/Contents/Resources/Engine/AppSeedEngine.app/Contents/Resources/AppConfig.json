@@ -1,0 +1,9 @@
+{
+  "appName": "AppSeedEngine",
+  "url": "https://example.com",
+  "bundleIdentifier": "com.appseed.engine",
+  "window": {
+    "width": 1280,
+    "height": 800
+  }
+}
