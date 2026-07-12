@@ -120,7 +120,18 @@ extension NavigationCoordinator: WKNavigationDelegate {
             return
         }
 
-        // Hard-blocking identity providers → trusted system auth session.
+        // Subframes (embeds, SSO iframes) load freely regardless of origin —
+        // and this check MUST come before the identity-provider intercept:
+        // sites like LinkedIn embed Google One Tap in accounts.google.com
+        // iframes, and intercepting those would fire an endless stream of
+        // ASWebAuthenticationSession consent dialogs.
+        if let targetFrame = navigationAction.targetFrame, !targetFrame.isMainFrame {
+            decisionHandler(.allow)
+            return
+        }
+
+        // Hard-blocking identity providers (main frame / new window only)
+        // → trusted system auth session.
         if isAuthURL(url) {
             startAuthSession(with: url)
             decisionHandler(.cancel)
@@ -130,12 +141,6 @@ extension NavigationCoordinator: WKNavigationDelegate {
         // Popups may navigate anywhere: OAuth chains bounce across several
         // domains before returning to the opener.
         if isPopup(webView) {
-            decisionHandler(.allow)
-            return
-        }
-
-        // Subframes (embeds, SSO iframes) load freely regardless of origin.
-        if let targetFrame = navigationAction.targetFrame, !targetFrame.isMainFrame {
             decisionHandler(.allow)
             return
         }

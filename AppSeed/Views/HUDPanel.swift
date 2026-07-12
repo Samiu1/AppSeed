@@ -11,7 +11,7 @@ enum HUDStyle {
     static let secondaryText = NSColor(srgbRed: 0.941, green: 0.922, blue: 0.890, alpha: 0.52)
     static let errorText = NSColor(srgbRed: 0.902, green: 0.494, blue: 0.412, alpha: 1)
 
-    static let panelSize = NSSize(width: 480, height: 244)
+    static let panelSize = NSSize(width: 480, height: 268)
     static let cornerRadius: CGFloat = 18
     static let padding: CGFloat = 28
 }
@@ -136,5 +136,54 @@ enum HUDControls {
         label.lineBreakMode = .byTruncatingTail
         label.frame = NSRect(x: HUDStyle.padding, y: y, width: width, height: 16)
         return label
+    }
+
+    /// Clickable shortcut chip in the HUD header. Shows the current global
+    /// shortcut; clicking it enters recording mode.
+    static func makeShortcutChip(y: CGFloat, panelWidth: CGFloat) -> NSButton {
+        let width: CGFloat = 96
+        let button = NSButton(frame: NSRect(
+            x: panelWidth - HUDStyle.padding - width, y: y, width: width, height: 22))
+        button.isBordered = false
+        button.setButtonType(.momentaryChange)
+        button.wantsLayer = true
+        button.layer?.backgroundColor = HUDStyle.fieldBackground.cgColor
+        button.layer?.cornerRadius = 6
+        button.layer?.cornerCurve = .continuous
+        return button
+    }
+
+    static func setShortcutChipTitle(_ button: NSButton, text: String, recording: Bool) {
+        button.attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: recording ? HUDStyle.text : HUDStyle.accent,
+            ]
+        )
+    }
+
+    static func makePathButton(y: CGFloat, width: CGFloat) -> NSButton {
+        let button = NSButton(frame: NSRect(x: HUDStyle.padding, y: y, width: width, height: 16))
+        button.isBordered = false
+        button.alignment = .left
+        button.bezelStyle = .shadowlessSquare
+        button.setButtonType(.momentaryPushIn)
+        return button
+    }
+
+    static func setPathButtonTitle(_ button: NSButton, path: String) {
+        let text = "Install to: \(path) (click to change)"
+        let attributed = NSMutableAttributedString(string: text)
+        let fullRange = NSRange(location: 0, length: text.count)
+        attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 11), range: fullRange)
+        attributed.addAttribute(.foregroundColor, value: HUDStyle.secondaryText, range: fullRange)
+        
+        if let pathRange = text.range(of: path) {
+            let nsRange = NSRange(pathRange, in: text)
+            attributed.addAttribute(.foregroundColor, value: HUDStyle.accent, range: nsRange)
+            attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
+        }
+        button.attributedTitle = attributed
     }
 }

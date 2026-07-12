@@ -6,6 +6,9 @@ final class EngineAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let config = try AppConfig.loadFromMainBundle()
+            // Creates ~/Library/Application Support/AppSeed/<bundle id>/ with
+            // commented inject.js / custom.css templates on first launch.
+            ResourceInjector.ensureCustomizationTemplates()
             NSApp.mainMenu = Self.makeMainMenu(appName: config.appName)
             let controller = BrowserWindowController(config: config)
             browserWindowController = controller
@@ -30,6 +33,17 @@ final class EngineAppDelegate: NSObject, NSApplicationDelegate {
             browserWindowController?.showWindow(nil)
         }
         return true
+    }
+
+    // MARK: - Customization actions (reached via the responder chain)
+
+    @objc func reloadCustomizations(_ sender: Any?) {
+        browserWindowController?.reloadCustomizations()
+    }
+
+    @objc func openCustomizationFolder(_ sender: Any?) {
+        ResourceInjector.ensureCustomizationTemplates()
+        NSWorkspace.shared.open(ResourceInjector.customizationDirectory)
     }
 
     private func presentFatalError(_ error: Error) {
@@ -77,6 +91,17 @@ final class EngineAppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Back", action: NSSelectorFromString("goBack:"), keyEquivalent: "[")
         viewMenu.addItem(withTitle: "Forward", action: NSSelectorFromString("goForward:"), keyEquivalent: "]")
+        viewMenu.addItem(.separator())
+        let reloadCustomizations = NSMenuItem(
+            title: "Reload Customizations",
+            action: #selector(EngineAppDelegate.reloadCustomizations(_:)),
+            keyEquivalent: "r"
+        )
+        reloadCustomizations.keyEquivalentModifierMask = [.command, .option]
+        viewMenu.addItem(reloadCustomizations)
+        viewMenu.addItem(withTitle: "Open Customization Folder…",
+                         action: #selector(EngineAppDelegate.openCustomizationFolder(_:)),
+                         keyEquivalent: "")
         addSubmenu(viewMenu, title: "View", to: mainMenu)
 
         let windowMenu = NSMenu(title: "Window")

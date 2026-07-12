@@ -1,0 +1,10 @@
+# Build output (produced by Scripts/build.sh)
+build/
+
+# macOS noise
+.DS_Store
+
+# Xcode user state (if a workspace is added later)
+xcuserdata/
+*.xcuserstate
+DerivedData/

@@ -62,7 +62,12 @@ enum HeadlessFactoryCLI {
         Task.detached {
             let factory = AppFactory(
                 progress: { message in print("• \(message)") },
-                resolveCollision: { _ in overwrite ? .overwrite : .autoRename }
+                resolveCollision: { collision in
+                    if overwrite && !collision.existingIsAppSeedClone {
+                        print("• \(collision.appName).app exists but wasn't created by AppSeed — keeping it and auto-renaming")
+                    }
+                    return overwrite ? .overwrite : .autoRename
+                }
             )
             do {
                 let installed = try await factory.build(request)

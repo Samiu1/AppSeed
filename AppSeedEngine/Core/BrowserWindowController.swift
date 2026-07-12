@@ -10,14 +10,21 @@ final class BrowserWindowController: NSWindowController {
     let webView: WKWebView
     private let config: AppConfig
     private let navigationCoordinator: NavigationCoordinator
+    private var pageColorObservation: NSKeyValueObservation?
 
     init(config: AppConfig) {
         self.config = config
 
         let contentRect = NSRect(x: 0, y: 0, width: config.window.width, height: config.window.height)
+        // Deliberately NOT .fullSizeContentView: the web view sits below the
+        // (hidden, transparent) title bar. With full-size content the web view
+        // swallows mouse events in the title-bar strip — the window can't be
+        // dragged — and the traffic lights overlap the site's own header.
+        // The strip is tinted to the page's background color below, so the
+        // window still reads as seamless.
         let window = NSWindow(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -59,6 +66,14 @@ final class BrowserWindowController: NSWindowController {
 
         navigationCoordinator.attach(to: webView)
 
+        // Blend the title-bar strip with the page: track WebKit's
+        // under-page background color so the strip matches light and dark
+        // sites alike instead of showing system-gray chrome.
+        window.backgroundColor = webView.underPageBackgroundColor
+        pageColorObservation = webView.observe(\.underPageBackgroundColor, options: [.new]) { [weak window] webView, _ in
+            window?.backgroundColor = webView.underPageBackgroundColor
+        }
+
         // Native window-state memory: restore the last frame if one was saved,
         // otherwise center at the configured initial size.
         if !window.setFrameUsingName(Self.frameAutosaveKey) {
@@ -75,5 +90,14 @@ final class BrowserWindowController: NSWindowController {
     func loadStartPage() {
         guard let url = URL(string: config.url) else { return }
         webView.load(URLRequest(url: url))
+    }
+
+    /// Re-reads inject.js / custom.css from the customization folder and
+    /// reloads, so edits apply without relaunching the app.
+    func reloadCustomizations() {
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        ResourceInjector.installUserScripts(into: controller)
+        webView.reload()
     }
 }
