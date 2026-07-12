@@ -2,9 +2,14 @@ import AppKit
 
 final class FactoryAppDelegate: NSObject, NSApplicationDelegate {
     private let hud = HUDController()
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AccessibilityAdvisor.runFirstLaunchCheck()
+
+        // Menu bar home: visible whenever AppSeed runs, since the app has no
+        // Dock icon (LSUIElement) and would otherwise be invisible.
+        statusItemController = StatusItemController(hud: hud)
 
         do {
             try HotkeyManager.shared.register { [weak self] in

@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Samiul Islam</string>
 	<!-- Build-time agent flag: no Dock icon and no menu bar from the moment
 	     AppSeed launches. Do NOT replace with runtime hiding — that flashes
 	     a Dock icon on launch. -->
