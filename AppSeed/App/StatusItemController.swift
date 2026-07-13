@@ -43,8 +43,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(shortcutHint)
 
         menu.addItem(.separator())
-        addFavoritesSection()
-        menu.addItem(.separator())
+
+        // Only surface the favourites section when there are favourites — an
+        // empty "My Apps" header just adds noise. Full management is in
+        // Settings › My Apps regardless.
+        let favorites = WrappedAppsRegistry.installed().filter { FavoritesStore.isFavorite($0.bundleID) }
+        if !favorites.isEmpty {
+            addFavoritesSection(favorites)
+            menu.addItem(.separator())
+        }
 
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
@@ -67,27 +74,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    /// "My Apps" header + one launch item per FAVOURITED app, then a link into
-    /// Settings › My Apps where the full list, favouriting, and updates live.
-    /// The menu deliberately stays short — favourites are the quick-launch set.
-    private func addFavoritesSection() {
+    /// "My Apps" header + one launch item per favourited app. Only called when
+    /// there is at least one favourite (the menu stays clean otherwise).
+    private func addFavoritesSection(_ favorites: [WrappedApp]) {
         let header = NSMenuItem(title: "My Apps", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
 
-        let favorites = WrappedAppsRegistry.installed().filter { FavoritesStore.isFavorite($0.bundleID) }
-        if favorites.isEmpty {
-            let empty = NSMenuItem(title: "  No favourites yet", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-        } else {
-            for app in favorites {
-                let item = NSMenuItem(title: app.name, action: #selector(openWrappedApp(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = app
-                item.image = Self.appIcon(for: app.path)
-                menu.addItem(item)
-            }
+        for app in favorites {
+            let item = NSMenuItem(title: app.name, action: #selector(openWrappedApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = app
+            item.image = Self.appIcon(for: app.path)
+            menu.addItem(item)
         }
         // Full app management (favouriting, remove, updates) lives in
         // Settings › My Apps — reachable via the Settings… item below.
