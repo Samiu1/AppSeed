@@ -143,11 +143,37 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         resetButton.target = self
         resetButton.action = #selector(resetInstallLocation)
 
+        let separator3 = Self.separator(top: 314, width: width, inset: inset)
+        let versionLabel = Self.caption(
+            "AppSeed \(Self.appVersionString)", top: 328, width: width - 130, inset: inset)
+        let aboutButton = NSButton(frame: NSRect(x: size.width - inset - 120, y: 322, width: 120, height: 26))
+        aboutButton.title = "About AppSeed"
+        aboutButton.bezelStyle = .rounded
+        aboutButton.controlSize = .small
+        aboutButton.target = self
+        aboutButton.action = #selector(showAbout)
+
         [generalHeading, startAtLoginCheckbox, generalDesc, separator1,
          shortcutHeading, shortcutDesc, shortcutButton, separator2,
-         locationHeading, locationDesc, pathLabel, changeButton, resetButton]
+         locationHeading, locationDesc, pathLabel, changeButton, resetButton,
+         separator3, versionLabel, aboutButton]
             .forEach(root.addSubview)
         return root
+    }
+
+    private static var appVersionString: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        return "version \(short)"
+    }
+
+    @objc private func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .credits: NSAttributedString(
+                string: "Turn any website into a lightweight Mac app.",
+                attributes: [.font: NSFont.systemFont(ofSize: 11)]
+            ),
+        ])
     }
 
     // MARK: - My Apps tab

@@ -63,10 +63,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         help.target = self
         menu.addItem(help)
 
-        let about = NSMenuItem(title: "About AppSeed", action: #selector(showAbout), keyEquivalent: "")
-        about.target = self
-        menu.addItem(about)
-
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit AppSeed", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -139,16 +135,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func showSettings() {
         SettingsWindowController.shared.present(selecting: .general)
-    }
-
-    @objc private func showAbout() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(
-                string: "Turn any website into a lightweight Mac app.",
-                attributes: [.font: NSFont.systemFont(ofSize: 11)]
-            ),
-        ])
     }
 
     @objc private func showHelp() {
