@@ -63,14 +63,15 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
   video-call camera/mic prompts, and external links.
 
 ### B. Non-technical-user features (build order)
-1. [ ] **"My Apps" list** — menu-bar submenu of every app AppSeed created (scan
-   install dir for `com.appseed.wrapped.*` via `AppFactory.isAppSeedClone`), with
-   Open / Show in Finder / **Remove** (delete the `.app` *and* its
-   `~/Library/WebKit/<bundle id>` data — otherwise impossible for a normal user).
-2. [ ] **Update All Apps** — regenerate every wrapped app in place with the
-   current embedded engine (logins survive via deterministic bundle id). Builds
-   on #1. Also refreshes stale icons/engine on existing apps (e.g. current
-   `Linear.app`). This is the "Layer 2" update path (see Distribution below).
+1. [x] **"My Apps" list — DONE** (`WrappedAppsRegistry`). Menu bar shows only
+   favourited apps (quick launch); the full list lives in **Settings › My Apps**
+   with favourite ⭐, Show in Finder, and Remove (moves the `.app` *and* its
+   per-bundle-id login/cache data to the Trash). `FavoritesStore` persists stars.
+2. [x] **Update All Apps — DONE** (`AppUpdater`, `UpdateProgressWindowController`).
+   Regenerates wrapped apps with the current engine (logins survive). Gated by
+   `EngineVersion.current` stamped into each app's `AppConfig.json`: the button
+   shows only when some app is on an older engine, else "All apps are up to date."
+   **Remember to bump `EngineVersion.current` whenever the engine changes.**
 3. [ ] **Web notifications bridge** — biggest "why doesn't this work" gap
    (WhatsApp/Gmail/Slack). JS shim forwarding page `Notification` →
    `WKScriptMessageHandler` → `UNUserNotificationCenter`. Explicit v1 cut.
