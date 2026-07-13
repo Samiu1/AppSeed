@@ -72,9 +72,11 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
    `EngineVersion.current` stamped into each app's `AppConfig.json`: the button
    shows only when some app is on an older engine, else "All apps are up to date."
    **Remember to bump `EngineVersion.current` whenever the engine changes.**
-3. [ ] **Web notifications bridge** — biggest "why doesn't this work" gap
-   (WhatsApp/Gmail/Slack). JS shim forwarding page `Notification` →
-   `WKScriptMessageHandler` → `UNUserNotificationCenter`. Explicit v1 cut.
+3. [x] **Web notifications bridge — DONE** (`NotificationBridge`). JS shim
+   replaces `window.Notification`, forwarding to `UNUserNotificationCenter`
+   with real-permission reporting and click-through. Verified on-device.
+   **Foreground `Notification` API only** — background service-worker Push
+   remains out of scope (no push service / VAPID keys). Engine bumped to v3.
 4. [ ] **Icon preview in HUD** — show fetched site icon before create, with a
    "choose your own image" option.
 5. [ ] **First-run welcome** — teach the ⌥P interaction once on first launch.
