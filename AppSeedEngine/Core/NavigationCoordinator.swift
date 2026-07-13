@@ -1,10 +1,8 @@
 import AppKit
 import WebKit
-import AuthenticationServices
 
 /// The engine's navigation policy. Decides, for every load, whether it stays
-/// in-window, opens a popup, hands off to the default browser, or runs
-/// through a trusted system auth session:
+/// in-window, opens a popup, or hands off to the default browser:
 ///
 ///  - Same-registrable-domain loads — including SPA route changes via
 ///    pushState/replaceState, which never even reach the delegate — stay
@@ -16,27 +14,40 @@ import AuthenticationServices
 ///  - window.open() popups get a real secondary window created from the
 ///    WKWebViewConfiguration WebKit hands us, so they share this app's
 ///    WKWebsiteDataStore and the session persists.
-///  - Known identity providers are routed through ASWebAuthenticationSession:
-///    Google hard-blocks embedded WKWebView logins (403: disallowed_useragent).
+///  - Third-party identity providers (Google, Microsoft, Apple) are kept
+///    IN the app's WebView — either in-window or in a shared-store popup —
+///    NOT ejected to ASWebAuthenticationSession. See the note below.
 ///  - Downloads land in ~/Downloads via WKDownloadDelegate.
 ///  - Camera/microphone prompts are forwarded (v1: in scope). Web
 ///    notifications are a deliberate v1 cut — WKWebView has no native bridge
 ///    for them, and we do not fake one.
+///
+/// OAuth design note (learned on-device): an earlier version routed Google &
+/// co. through `ASWebAuthenticationSession`. That FAILS for wrapped sites,
+/// because the site starts the flow in this WebView (setting an OAuth `state`
+/// against a cookie in our WKWebsiteDataStore) but the auth session runs in a
+/// separate Safari context. The provider redirects back into that Safari
+/// context, so the site sees a missing/mismatched `state`
+/// ("Invalid OAuth state"), and the resulting cookies land in Safari's jar,
+/// not our data store — so the login never persists either. The wrapped site
+/// owns its own OAuth client and redirect URI (AppSeed does not), so there is
+/// no custom callback scheme for us to catch. Keeping the whole flow in one
+/// context — this WebView, which already sends a desktop-Safari User-Agent to
+/// clear Google's `disallowed_useragent` check — keeps `state` and cookies
+/// consistent. Do not reintroduce the ASWebAuthenticationSession hand-off.
 final class NavigationCoordinator: NSObject {
     private let appDomain: String
     private weak var hostWindow: NSWindow?
     private weak var mainWebView: WKWebView?
     private var popups: [PopupWindowController] = []
-    private var authSession: ASWebAuthenticationSession?
 
-    /// Identity providers that refuse to complete auth inside an embedded
-    /// WKWebView. Navigations here run in an ASWebAuthenticationSession.
-    private static let authDomains: Set<String> = [
-        "accounts.google.com",
-        "accounts.youtube.com",
-        "login.microsoftonline.com",
-        "login.live.com",
-        "appleid.apple.com",
+    /// Registrable domains of third-party identity providers. Navigations here
+    /// are kept inside the app's WebView (in-window or shared-store popup) so
+    /// the OAuth flow completes in the same context that started it.
+    private static let authProviders: Set<String> = [
+        "google.com", "youtube.com",
+        "microsoftonline.com", "live.com", "microsoft.com", "office.com",
+        "apple.com", "icloud.com",
     ]
 
     init(appDomain: String, hostWindow: NSWindow) {
@@ -56,9 +67,9 @@ final class NavigationCoordinator: NSObject {
         popups.contains { $0.webView === webView }
     }
 
-    private func isAuthURL(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return Self.authDomains.contains(host)
+    private func isAuthProvider(_ url: URL) -> Bool {
+        guard let host = url.host else { return false }
+        return Self.authProviders.contains(DomainUtils.registrableDomain(of: host))
     }
 
     private func isSameSite(_ url: URL) -> Bool {
@@ -72,29 +83,6 @@ final class NavigationCoordinator: NSObject {
 
     func popupWindowClosed(_ controller: PopupWindowController) {
         popups.removeAll { $0 === controller }
-    }
-
-    // MARK: - ASWebAuthenticationSession
-
-    /// Completes a login at a hard-blocking identity provider in a trusted
-    /// Safari web context. AppSeed does not own the wrapped site's OAuth
-    /// client or redirect URIs, so there is no custom callback scheme to
-    /// capture — the goal is that the provider redirects back to the wrapped
-    /// site *inside* the session and the resulting cookies land in the shared
-    /// (non-ephemeral) cookie store, after which the main web view reloads
-    /// and picks the session up.
-    private func startAuthSession(with url: URL) {
-        authSession?.cancel()
-        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: nil) { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.authSession = nil
-                self?.mainWebView?.reload()
-            }
-        }
-        session.prefersEphemeralWebBrowserSession = false // share cookies — required for the session to persist
-        session.presentationContextProvider = self
-        authSession = session
-        session.start()
     }
 }
 
@@ -120,21 +108,10 @@ extension NavigationCoordinator: WKNavigationDelegate {
             return
         }
 
-        // Subframes (embeds, SSO iframes) load freely regardless of origin —
-        // and this check MUST come before the identity-provider intercept:
-        // sites like LinkedIn embed Google One Tap in accounts.google.com
-        // iframes, and intercepting those would fire an endless stream of
-        // ASWebAuthenticationSession consent dialogs.
+        // Subframes (embeds, SSO iframes, Google One Tap) load freely
+        // regardless of origin.
         if let targetFrame = navigationAction.targetFrame, !targetFrame.isMainFrame {
             decisionHandler(.allow)
-            return
-        }
-
-        // Hard-blocking identity providers (main frame / new window only)
-        // → trusted system auth session.
-        if isAuthURL(url) {
-            startAuthSession(with: url)
-            decisionHandler(.cancel)
             return
         }
 
@@ -146,6 +123,14 @@ extension NavigationCoordinator: WKNavigationDelegate {
         }
 
         if isSameSite(url) {
+            decisionHandler(.allow)
+            return
+        }
+
+        // Third-party identity providers stay in-window so the OAuth flow
+        // completes in the same context (and data store) that began it —
+        // ejecting them breaks `state` validation and cookie persistence.
+        if isAuthProvider(url) {
             decisionHandler(.allow)
             return
         }
@@ -187,20 +172,18 @@ extension NavigationCoordinator: WKUIDelegate {
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url, url.scheme?.lowercased().hasPrefix("http") == true {
-            if isAuthURL(url) {
-                startAuthSession(with: url)
-                return nil
-            }
-            // New-window requests to other domains are treated like external
-            // navigations and open in the default browser.
-            if !isSameSite(url) {
+            // New-window requests to unrelated domains open in the default
+            // browser — EXCEPT identity providers, whose popups must stay
+            // in-app and share the data store (Google/Microsoft commonly open
+            // their consent screen via window.open).
+            if !isSameSite(url) && !isAuthProvider(url) {
                 openExternally(url)
                 return nil
             }
         }
-        // Same-site (or initially-blank scripted) popup: a real secondary
-        // window built from the configuration WebKit provided, sharing this
-        // app's WKWebsiteDataStore so the session persists.
+        // Same-site, auth-provider, or initially-blank scripted popup: a real
+        // secondary window built from the configuration WebKit provided,
+        // sharing this app's WKWebsiteDataStore so the session persists.
         let popup = PopupWindowController(
             configuration: configuration,
             coordinator: self,
@@ -322,13 +305,5 @@ extension NavigationCoordinator: WKDownloadDelegate {
             counter += 1
         }
         return candidate
-    }
-}
-
-// MARK: - ASWebAuthenticationPresentationContextProviding
-
-extension NavigationCoordinator: ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        hostWindow ?? NSApp.keyWindow ?? NSWindow()
     }
 }
