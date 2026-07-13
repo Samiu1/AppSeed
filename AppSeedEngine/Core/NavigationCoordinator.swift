@@ -18,9 +18,9 @@ import WebKit
 ///    IN the app's WebView — either in-window or in a shared-store popup —
 ///    NOT ejected to ASWebAuthenticationSession. See the note below.
 ///  - Downloads land in ~/Downloads via WKDownloadDelegate.
-///  - Camera/microphone prompts are forwarded (v1: in scope). Web
-///    notifications are a deliberate v1 cut — WKWebView has no native bridge
-///    for them, and we do not fake one.
+///  - Camera/microphone prompts are forwarded (v1: in scope). Foreground web
+///    notifications are bridged to native ones (see NotificationBridge);
+///    background service-worker push is still out of scope.
 ///
 /// OAuth design note (learned on-device): an earlier version routed Google &
 /// co. through `ASWebAuthenticationSession`. That FAILS for wrapped sites,
