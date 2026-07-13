@@ -16,6 +16,10 @@ struct AppConfig: Codable {
     var url: String
     var bundleIdentifier: String
     var window: WindowState
+    /// Engine version that built this app. Optional for backward compatibility
+    /// with apps generated before versioning existed (treated as version 0,
+    /// i.e. stale). The engine runtime ignores it; only the factory reads it.
+    var engineVersion: Int?
 
     static let resourceName = "AppConfig"
 

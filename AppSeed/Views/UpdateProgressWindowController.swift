@@ -10,6 +10,7 @@ final class UpdateProgressWindowController: NSWindowController {
     private var progressBar: NSProgressIndicator!
     private var doneButton: NSButton!
     private var isRunning = false
+    private var onFinish: (() -> Void)?
 
     private convenience init() {
         let window = NSWindow(
@@ -26,9 +27,12 @@ final class UpdateProgressWindowController: NSWindowController {
 
     /// Runs the batch update. A no-op re-entrancy guard keeps a second click
     /// from starting an overlapping run; it just refocuses the window instead.
-    func run() {
+    /// `completion` runs on the main actor once the batch finishes (e.g. so the
+    /// caller can refresh a list).
+    func run(completion: (() -> Void)? = nil) {
         present()
         guard !isRunning else { return }
+        onFinish = completion
         isRunning = true
 
         doneButton.isHidden = true
@@ -76,6 +80,8 @@ final class UpdateProgressWindowController: NSWindowController {
                 "Updated \(succeeded) of \(outcomes.count).\nCouldn't update:\n\(lines)"
         }
         doneButton.isHidden = false
+        onFinish?()
+        onFinish = nil
     }
 
     // MARK: - Window
