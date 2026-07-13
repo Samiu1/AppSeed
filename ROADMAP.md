@@ -51,16 +51,16 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
 
 ## 🔲 Outstanding
 
-### A. On-device validation — needs a human (highest priority)
-These are coded but unverified against live services; the spec flags them as the
-riskiest assumptions.
-
-- [ ] **Google/OAuth login flow.** Wrap Gmail, sign in, confirm the
-  `ASWebAuthenticationSession` handoff lands session cookies back in the wrapped
-  app's shared `WKWebsiteDataStore`. Highest-risk item — validate before relying
-  on real-app wrapping. If it fails, likely fix: Safari-UA popup-window strategy.
-- [ ] **Real-app pass.** Wrap Notion, Figma, Slack, WhatsApp Web. Exercise
-  downloads, `window.open` popups, video-call camera/mic prompts, external links.
+### A. On-device validation — needs a human
+- [x] **Google/OAuth login flow — VALIDATED** on comix.to (Google sign-in works
+  and persists). The original `ASWebAuthenticationSession` hand-off failed with
+  "Invalid OAuth state" (flow split across two contexts); fixed by keeping the
+  whole OAuth flow in the app's WebView with its desktop-Safari UA. See the
+  OAuth design note in `NavigationCoordinator.swift` — do not reintroduce the
+  hand-off.
+- [ ] **Real-app pass (broaden).** comix.to confirmed. Still worth spot-checking
+  Notion, Figma, Slack, WhatsApp Web for downloads, `window.open` popups,
+  video-call camera/mic prompts, and external links.
 
 ### B. Non-technical-user features (build order)
 1. [ ] **"My Apps" list** — menu-bar submenu of every app AppSeed created (scan
