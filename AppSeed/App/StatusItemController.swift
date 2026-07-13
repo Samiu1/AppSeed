@@ -16,9 +16,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         super.init()
 
         if let button = statusItem.button {
-            let icon = NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: "AppSeed")
-            icon?.isTemplate = true // adapts to light/dark menu bar
-            button.image = icon
+            button.image = Self.menuBarIcon()
             button.toolTip = "AppSeed — turn any website into a Mac app"
         }
         statusItem.menu = buildMenu()
@@ -61,6 +59,24 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(quit)
 
         return menu
+    }
+
+    /// The AppSeed leaf, rendered from Resources/MenuBarLeaf.png (built from
+    /// leaf.svg). Sized to the standard 18pt menu bar height and marked as a
+    /// template so macOS tints it for light/dark menu bars. Falls back to the
+    /// system leaf symbol if the asset is somehow missing.
+    private static func menuBarIcon() -> NSImage {
+        let image: NSImage
+        if let url = Bundle.main.url(forResource: "MenuBarLeaf", withExtension: "png"),
+           let loaded = NSImage(contentsOf: url) {
+            image = loaded
+        } else {
+            image = NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: "AppSeed")
+                ?? NSImage()
+        }
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = true
+        return image
     }
 
     func menuWillOpen(_ menu: NSMenu) {

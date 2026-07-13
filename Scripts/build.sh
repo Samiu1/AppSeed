@@ -24,9 +24,11 @@ export SDKROOT="$SDK"
 rm -rf "$BUILD"
 mkdir -p "$OBJ"
 
-echo "== Default icon =="
+echo "== Brand assets (from Resources/leaf.svg) =="
 DEFAULT_PNG="$OBJ/default-icon.png"
-swift -sdk "$SDK" "$ROOT/Scripts/make-default-icon.swift" "$DEFAULT_PNG"
+MENUBAR_PNG="$OBJ/MenuBarLeaf.png"
+swift -sdk "$SDK" "$ROOT/Scripts/make-default-icon.swift" \
+    "$ROOT/AppSeed/Resources/leaf.svg" "$DEFAULT_PNG" "$MENUBAR_PNG"
 
 # sips + iconutil, with Apple's exact iconset naming convention — iconutil
 # silently produces a corrupt .icns if any filename deviates.
@@ -70,6 +72,8 @@ swiftc -O \
     -o "$FACTORY_APP/Contents/MacOS/AppSeed"
 cp "$ROOT/AppSeed/Resources/Info.plist" "$FACTORY_APP/Contents/Info.plist"
 cp "$DEFAULT_ICNS" "$FACTORY_APP/Contents/Resources/AppIcon.icns"
+# Menu bar template image (loaded at runtime by StatusItemController).
+cp "$MENUBAR_PNG" "$FACTORY_APP/Contents/Resources/MenuBarLeaf.png"
 # Embed the compiled engine blueprint — the factory clones this at runtime.
 cp -R "$ENGINE_APP" "$FACTORY_APP/Contents/Resources/Engine/AppSeedEngine.app"
 codesign --force --deep --sign - "$FACTORY_APP"
