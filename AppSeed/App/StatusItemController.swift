@@ -89,10 +89,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 menu.addItem(item)
             }
         }
-
-        let manage = NSMenuItem(title: "Manage Apps…", action: #selector(showMyApps), keyEquivalent: "")
-        manage.target = self
-        menu.addItem(manage)
+        // Full app management (favouriting, remove, updates) lives in
+        // Settings › My Apps — reachable via the Settings… item below.
     }
 
     /// A wrapped app's own icon, sized for a menu row.
@@ -142,10 +140,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func showSettings() {
         SettingsWindowController.shared.present(selecting: .general)
-    }
-
-    @objc private func showMyApps() {
-        SettingsWindowController.shared.present(selecting: .myApps)
     }
 
     @objc private func showAbout() {
