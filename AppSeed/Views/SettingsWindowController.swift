@@ -50,6 +50,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         )
         window.title = "AppSeed Settings"
         window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = HUDStyle.surface
         self.init(window: window)
         window.delegate = self
         buildTabs()
@@ -102,9 +104,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let width = size.width - inset * 2
 
         let generalHeading = Self.heading("General", top: 20, width: width, inset: inset)
-        startAtLoginCheckbox = NSButton(checkboxWithTitle: "Start AppSeed at login", target: self,
+        startAtLoginCheckbox = NSButton(checkboxWithTitle: "", target: self,
                                         action: #selector(toggleStartAtLogin))
-        startAtLoginCheckbox.font = .systemFont(ofSize: 13)
+        startAtLoginCheckbox.attributedTitle = NSAttributedString(
+            string: "Start AppSeed at login",
+            attributes: [
+                .foregroundColor: HUDStyle.text,
+                .font: NSFont.systemFont(ofSize: 13)
+            ]
+        )
         startAtLoginCheckbox.frame = NSRect(x: inset, y: 46, width: width, height: 20)
         let generalDesc = Self.caption(
             "Runs quietly in the background so your shortcut always works.",
@@ -126,7 +134,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let locationDesc = Self.caption("New apps are saved here.", top: 220, width: width, inset: inset)
         pathLabel = NSTextField(labelWithString: "")
         pathLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        pathLabel.textColor = .labelColor
+        pathLabel.textColor = HUDStyle.text
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.frame = NSRect(x: inset, y: 244, width: width - 110, height: 20)
 
@@ -137,7 +145,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         changeButton.action = #selector(changeInstallLocation)
 
         let resetButton = NSButton(frame: NSRect(x: inset, y: 276, width: 190, height: 24))
-        resetButton.title = "Reset to ~/Applications"
+        resetButton.attributedTitle = NSAttributedString(
+            string: "Reset to ~/Applications",
+            attributes: [
+                .foregroundColor: HUDStyle.text,
+                .font: NSFont.systemFont(ofSize: 11)
+            ]
+        )
         resetButton.bezelStyle = .inline
         resetButton.controlSize = .small
         resetButton.target = self
@@ -168,12 +182,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(
-                string: "Turn any website into a lightweight Mac app.",
-                attributes: [.font: NSFont.systemFont(ofSize: 11)]
-            ),
-        ])
+        AboutWindowController.shared.show()
     }
 
     // MARK: - My Apps tab
@@ -198,7 +207,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         updateStatusLabel = NSTextField(labelWithString: "")
         updateStatusLabel.font = .systemFont(ofSize: 12)
-        updateStatusLabel.textColor = .secondaryLabelColor
+        updateStatusLabel.textColor = HUDStyle.secondaryText
         updateStatusLabel.lineBreakMode = .byTruncatingTail
         updateStatusLabel.frame = NSRect(x: inset, y: 72, width: width - 130, height: 18)
 
@@ -278,7 +287,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let starred = FavoritesStore.isFavorite(app.bundleID)
         star.image = NSImage(systemSymbolName: starred ? "star.fill" : "star",
                              accessibilityDescription: starred ? "Favourited" : "Not favourited")
-        star.contentTintColor = starred ? .systemYellow : .tertiaryLabelColor
+        star.contentTintColor = starred ? .systemYellow : HUDStyle.secondaryText
         star.toolTip = starred ? "Shown in the menu bar" : "Show in the menu bar"
         star.target = self
         star.action = #selector(toggleFavorite(_:))
@@ -289,13 +298,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let name = NSTextField(labelWithString: app.name)
         name.font = .systemFont(ofSize: 13, weight: .medium)
+        name.textColor = HUDStyle.text
         name.lineBreakMode = .byTruncatingTail
         name.frame = NSRect(x: 76, y: 9, width: width - 76 - 180, height: 18)
 
-        let subtitle = app.needsUpdate ? "\(app.url)  ·  update available" : app.url
+        let subtitle = app.needsUpdate ? "update available" : ""
         let sub = NSTextField(labelWithString: subtitle)
         sub.font = .systemFont(ofSize: 11)
-        sub.textColor = app.needsUpdate ? .systemOrange : .secondaryLabelColor
+        sub.textColor = app.needsUpdate ? HUDStyle.errorText : HUDStyle.secondaryText
         sub.lineBreakMode = .byTruncatingTail
         sub.frame = NSRect(x: 76, y: 28, width: width - 76 - 180, height: 15)
 
@@ -388,7 +398,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static func heading(_ text: String, top: CGFloat, width: CGFloat, inset: CGFloat) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .labelColor
+        label.textColor = HUDStyle.accent
         label.frame = NSRect(x: inset, y: top, width: width, height: 18)
         return label
     }
@@ -396,7 +406,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static func caption(_ text: String, top: CGFloat, width: CGFloat, inset: CGFloat) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 11)
-        label.textColor = .secondaryLabelColor
+        label.textColor = HUDStyle.secondaryText
         label.lineBreakMode = .byTruncatingTail
         label.frame = NSRect(x: inset, y: top, width: width, height: 15)
         return label

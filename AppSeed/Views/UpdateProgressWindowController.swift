@@ -21,6 +21,8 @@ final class UpdateProgressWindowController: NSWindowController {
         )
         window.title = "Update Apps"
         window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = HUDStyle.surface
         self.init(window: window)
         buildContent()
     }
@@ -102,7 +104,7 @@ final class UpdateProgressWindowController: NSWindowController {
 
         statusLabel = NSTextField(labelWithString: "")
         statusLabel.font = .systemFont(ofSize: 13)
-        statusLabel.textColor = .labelColor
+        statusLabel.textColor = HUDStyle.text
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 4
         statusLabel.cell?.wraps = true
