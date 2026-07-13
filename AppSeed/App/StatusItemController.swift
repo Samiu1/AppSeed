@@ -44,6 +44,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         addMyAppsSection()
+
+        let updateAll = NSMenuItem(title: "Update All Apps…", action: #selector(updateAllApps), keyEquivalent: "")
+        updateAll.target = self
+        menu.addItem(updateAll)
+
         menu.addItem(.separator())
 
         let openFolder = NSMenuItem(title: "Open Apps Folder", action: #selector(openInstallFolder), keyEquivalent: "")
@@ -165,6 +170,31 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func revealWrappedApp(_ sender: NSMenuItem) {
         guard let app = sender.representedObject as? WrappedApp else { return }
         NSWorkspace.shared.activateFileViewerSelecting([app.path])
+    }
+
+    @objc private func updateAllApps() {
+        NSApp.activate(ignoringOtherApps: true)
+        let apps = WrappedAppsRegistry.installed()
+        guard !apps.isEmpty else {
+            let info = NSAlert()
+            info.messageText = "No apps to update yet"
+            info.informativeText = "Create an app first — then you can update it here."
+            info.addButton(withTitle: "OK")
+            info.runModal()
+            return
+        }
+
+        let confirm = NSAlert()
+        confirm.messageText = "Update all \(apps.count) apps?"
+        confirm.informativeText = """
+        This rebuilds each app with the latest version of AppSeed. Any open \
+        apps will restart, and your logins are kept.
+        """
+        confirm.addButton(withTitle: "Update")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        UpdateProgressWindowController.shared.run()
     }
 
     @objc private func removeWrappedApp(_ sender: NSMenuItem) {
