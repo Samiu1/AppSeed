@@ -157,6 +157,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         )
         window.title = "AppSeed Help"
         window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = HUDStyle.surface
 
         let scrollView = NSScrollView(frame: window.contentLayoutRect)
         scrollView.autoresizingMask = [.width, .height]
@@ -181,13 +183,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         func heading(_ string: String) {
             text.append(NSAttributedString(string: string + "\n", attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
+                .foregroundColor: HUDStyle.accent,
             ]))
         }
         func body(_ string: String) {
             text.append(NSAttributedString(string: string + "\n\n", attributes: [
                 .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: HUDStyle.text,
             ]))
         }
 
