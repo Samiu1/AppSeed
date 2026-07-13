@@ -32,15 +32,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func populateMenu() {
         menu.removeAllItems()
 
-        let newApp = NSMenuItem(title: "New App…", action: #selector(showHUD), keyEquivalent: "")
+        // Show the global shortcut right-aligned, like the other rows. It's
+        // display-only here — the always-on trigger is the Carbon hotkey.
+        let shortcut = HotkeyManager.menuKeyEquivalent()
+        let newApp = NSMenuItem(title: "New App", action: #selector(showHUD), keyEquivalent: shortcut.key)
+        newApp.keyEquivalentModifierMask = shortcut.modifiers
         newApp.target = self
         menu.addItem(newApp)
-
-        let shortcutHint = NSMenuItem(
-            title: "Shortcut: \(HotkeyManager.configuredShortcut().displayString)",
-            action: nil, keyEquivalent: "")
-        shortcutHint.isEnabled = false
-        menu.addItem(shortcutHint)
 
         menu.addItem(.separator())
 
@@ -57,15 +55,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         settings.target = self
         menu.addItem(settings)
 
-        menu.addItem(.separator())
-
-        let help = NSMenuItem(title: "AppSeed Help", action: #selector(showHelp), keyEquivalent: "")
+        let help = NSMenuItem(title: "Help", action: #selector(showHelp), keyEquivalent: "")
         help.target = self
         menu.addItem(help)
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit AppSeed", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
     }
