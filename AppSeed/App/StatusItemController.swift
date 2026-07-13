@@ -46,10 +46,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         addFavoritesSection()
         menu.addItem(.separator())
 
-        let openFolder = NSMenuItem(title: "Open Apps Folder", action: #selector(openInstallFolder), keyEquivalent: "")
-        openFolder.target = self
-        menu.addItem(openFolder)
-
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -150,12 +146,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func showMyApps() {
         SettingsWindowController.shared.present(selecting: .myApps)
-    }
-
-    @objc private func openInstallFolder() {
-        let directory = AppFactory.defaultInstallDirectory
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(directory)
     }
 
     @objc private func showAbout() {

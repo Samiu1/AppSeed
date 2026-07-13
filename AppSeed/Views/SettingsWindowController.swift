@@ -163,6 +163,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             "Star an app to show it in the menu bar for quick launching.",
             top: 44, width: width, inset: inset)
 
+        let openFolderButton = NSButton(frame: NSRect(x: size.width - inset - 150, y: 14, width: 150, height: 26))
+        openFolderButton.title = "Open Apps Folder"
+        openFolderButton.bezelStyle = .rounded
+        openFolderButton.controlSize = .small
+        openFolderButton.target = self
+        openFolderButton.action = #selector(openAppsFolder)
+
         updateStatusLabel = NSTextField(labelWithString: "")
         updateStatusLabel.font = .systemFont(ofSize: 12)
         updateStatusLabel.textColor = .secondaryLabelColor
@@ -190,9 +197,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         appsListStack.autoresizingMask = [.width]
         appsScrollView.documentView = appsListStack
 
-        [heading, caption, updateStatusLabel, updateButton, separator, appsScrollView]
+        [heading, caption, openFolderButton, updateStatusLabel, updateButton, separator, appsScrollView]
             .forEach(root.addSubview)
         return root
+    }
+
+    @objc private func openAppsFolder() {
+        let directory = AppFactory.defaultInstallDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
     }
 
     /// Rebuilds the app list and the update banner from disk.
