@@ -9,13 +9,14 @@ import AppKit
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
+    private var startAtLoginCheckbox: NSButton!
     private var shortcutButton: NSButton!
     private var pathLabel: NSTextField!
     private var recordingMonitor: Any?
 
     private convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 250),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 330),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -27,8 +28,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         buildContent()
     }
 
-    /// Brings the window forward, refreshing both controls to current values.
+    /// Brings the window forward, refreshing all controls to current values.
     func present() {
+        refreshStartAtLogin()
         refreshShortcut()
         refreshPath()
         NSApp.activate(ignoringOtherApps: true)
@@ -44,53 +46,61 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let inset: CGFloat = 24
         let width = content.bounds.width - inset * 2
 
+        // Section: General (Start at login)
+        let generalHeading = Self.heading("General", y: 288, width: width, inset: inset)
+        startAtLoginCheckbox = NSButton(checkboxWithTitle: "Start AppSeed at login", target: self,
+                                        action: #selector(toggleStartAtLogin))
+        startAtLoginCheckbox.font = .systemFont(ofSize: 13)
+        startAtLoginCheckbox.frame = NSRect(x: inset, y: 262, width: width, height: 20)
+        let generalDesc = Self.caption(
+            "Runs quietly in the background so your shortcut always works.",
+            y: 244, width: width, inset: inset)
+
+        let separator1 = NSBox(frame: NSRect(x: inset, y: 224, width: width, height: 1))
+        separator1.boxType = .separator
+
         // Section: Keyboard Shortcut
-        let shortcutHeading = Self.heading("Keyboard Shortcut", y: 200, width: width, inset: inset)
+        let shortcutHeading = Self.heading("Keyboard Shortcut", y: 194, width: width, inset: inset)
         let shortcutDesc = Self.caption(
-            "Press this anywhere to open AppSeed.", y: 180, width: width - 120, inset: inset)
-        shortcutButton = NSButton(frame: NSRect(x: content.bounds.width - inset - 108, y: 178, width: 108, height: 28))
+            "Press this anywhere to open AppSeed.", y: 174, width: width - 120, inset: inset)
+        shortcutButton = NSButton(frame: NSRect(x: content.bounds.width - inset - 108, y: 172, width: 108, height: 28))
         shortcutButton.bezelStyle = .rounded
         shortcutButton.setButtonType(.momentaryPushIn)
         shortcutButton.target = self
         shortcutButton.action = #selector(beginRecording)
 
-        // Separator
-        let separator = NSBox(frame: NSRect(x: inset, y: 150, width: width, height: 1))
-        separator.boxType = .separator
+        let separator2 = NSBox(frame: NSRect(x: inset, y: 144, width: width, height: 1))
+        separator2.boxType = .separator
 
         // Section: Install Location
-        let locationHeading = Self.heading("Install Location", y: 120, width: width, inset: inset)
+        let locationHeading = Self.heading("Install Location", y: 114, width: width, inset: inset)
         let locationDesc = Self.caption(
-            "New apps are saved here.", y: 100, width: width, inset: inset)
+            "New apps are saved here.", y: 94, width: width, inset: inset)
         pathLabel = NSTextField(labelWithString: "")
         pathLabel.font = .systemFont(ofSize: 13, weight: .medium)
         pathLabel.textColor = .labelColor
         pathLabel.lineBreakMode = .byTruncatingMiddle
-        pathLabel.frame = NSRect(x: inset, y: 70, width: width - 110, height: 20)
+        pathLabel.frame = NSRect(x: inset, y: 64, width: width - 110, height: 20)
 
-        let changeButton = NSButton(frame: NSRect(x: content.bounds.width - inset - 96, y: 66, width: 96, height: 28))
+        let changeButton = NSButton(frame: NSRect(x: content.bounds.width - inset - 96, y: 60, width: 96, height: 28))
         changeButton.title = "Change…"
         changeButton.bezelStyle = .rounded
         changeButton.target = self
         changeButton.action = #selector(changeInstallLocation)
 
-        let resetButton = NSButton(frame: NSRect(x: inset, y: 24, width: 180, height: 24))
+        let resetButton = NSButton(frame: NSRect(x: inset, y: 22, width: 180, height: 24))
         resetButton.title = "Reset to ~/Applications"
         resetButton.bezelStyle = .inline
         resetButton.controlSize = .small
         resetButton.target = self
         resetButton.action = #selector(resetInstallLocation)
 
-        content.addSubview(shortcutHeading)
-        content.addSubview(shortcutDesc)
-        content.addSubview(shortcutButton)
-        content.addSubview(separator)
-        content.addSubview(locationHeading)
-        content.addSubview(locationDesc)
-        content.addSubview(pathLabel)
-        content.addSubview(changeButton)
-        content.addSubview(resetButton)
+        [generalHeading, startAtLoginCheckbox, generalDesc, separator1,
+         shortcutHeading, shortcutDesc, shortcutButton, separator2,
+         locationHeading, locationDesc, pathLabel, changeButton, resetButton]
+            .forEach(content.addSubview)
 
+        refreshStartAtLogin()
         refreshShortcut()
         refreshPath()
     }
@@ -110,6 +120,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         label.lineBreakMode = .byTruncatingTail
         label.frame = NSRect(x: inset, y: y, width: width, height: 15)
         return label
+    }
+
+    // MARK: - Start at login
+
+    private func refreshStartAtLogin() {
+        startAtLoginCheckbox?.state = LoginItemManager.isEnabled ? .on : .off
+    }
+
+    @objc private func toggleStartAtLogin() {
+        let wantEnabled = startAtLoginCheckbox.state == .on
+        do {
+            try LoginItemManager.setEnabled(wantEnabled)
+        } catch {
+            // Revert the checkbox to the true system state and explain.
+            refreshStartAtLogin()
+            let alert = NSAlert()
+            alert.messageText = "Couldn't change the login setting"
+            alert.informativeText = LoginItemManager.requiresApproval
+                ? "macOS needs your approval first. Open System Settings › General › Login Items and enable AppSeed there."
+                : error.localizedDescription
+            alert.runModal()
+        }
     }
 
     // MARK: - Shortcut recording
