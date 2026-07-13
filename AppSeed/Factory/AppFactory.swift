@@ -221,7 +221,8 @@ final class AppFactory {
             appName: request.appName,
             url: request.url.absoluteString,
             bundleIdentifier: DomainUtils.bundleIdentifier(forHost: request.url.host ?? "site"),
-            window: .init(width: 1280, height: 800)
+            window: .init(width: 1280, height: 800),
+            engineVersion: EngineVersion.current
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

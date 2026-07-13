@@ -8,6 +8,12 @@ struct WrappedApp {
     let url: String
     let bundleID: String
     let path: URL
+    /// Engine version the app was built with (0 for apps predating versioning).
+    let engineVersion: Int
+
+    /// True when the app was built with an engine older than this AppSeed's —
+    /// the precise "an update is available for this app" signal.
+    var needsUpdate: Bool { engineVersion < EngineVersion.current }
 }
 
 /// Discovers and removes AppSeed-generated apps. "My Apps" in the menu bar is
@@ -94,18 +100,28 @@ enum WrappedAppsRegistry {
               bundleID.hasPrefix("com.appseed.wrapped.") // exclude stray engine copies
         else { return nil }
 
-        // The wrapped URL lives in the injected config; fall back gracefully.
+        // The wrapped URL and engine version live in the injected config;
+        // fall back gracefully (an app predating versioning reports 0).
         var url = ""
+        var engineVersion = 0
         let configURL = bundleURL.appendingPathComponent("Contents/Resources/AppConfig.json")
         if let configData = try? Data(contentsOf: configURL),
            let config = try? JSONDecoder().decode(AppConfig.self, from: configData) {
             url = config.url
+            engineVersion = config.engineVersion ?? 0
         }
 
         let name = (plist["CFBundleDisplayName"] as? String)
             ?? (plist["CFBundleName"] as? String)
             ?? bundleURL.deletingPathExtension().lastPathComponent
-        return WrappedApp(name: name, url: url, bundleID: bundleID, path: bundleURL)
+        return WrappedApp(name: name, url: url, bundleID: bundleID, path: bundleURL,
+                          engineVersion: engineVersion)
+    }
+
+    /// True when at least one installed app is on an older engine — the
+    /// condition under which "Update All Apps" is worth surfacing.
+    static func updatesAvailable() -> Bool {
+        installed().contains { $0.needsUpdate }
     }
 
     // MARK: - Removal internals

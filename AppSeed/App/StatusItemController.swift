@@ -32,90 +32,56 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func populateMenu() {
         menu.removeAllItems()
 
-        let newApp = NSMenuItem(title: "New App…", action: #selector(showHUD), keyEquivalent: "")
+        // Show the global shortcut right-aligned, like the other rows. It's
+        // display-only here — the always-on trigger is the Carbon hotkey.
+        let shortcut = HotkeyManager.menuKeyEquivalent()
+        let newApp = NSMenuItem(title: "New App", action: #selector(showHUD), keyEquivalent: shortcut.key)
+        newApp.keyEquivalentModifierMask = shortcut.modifiers
         newApp.target = self
         menu.addItem(newApp)
 
-        let shortcutHint = NSMenuItem(
-            title: "Shortcut: \(HotkeyManager.configuredShortcut().displayString)",
-            action: nil, keyEquivalent: "")
-        shortcutHint.isEnabled = false
-        menu.addItem(shortcutHint)
-
-        menu.addItem(.separator())
-        addMyAppsSection()
         menu.addItem(.separator())
 
-        let openFolder = NSMenuItem(title: "Open Apps Folder", action: #selector(openInstallFolder), keyEquivalent: "")
-        openFolder.target = self
-        menu.addItem(openFolder)
+        // Only surface the favourites section when there are favourites — an
+        // empty "My Apps" header just adds noise. Full management is in
+        // Settings › My Apps regardless.
+        let favorites = WrappedAppsRegistry.installed().filter { FavoritesStore.isFavorite($0.bundleID) }
+        if !favorites.isEmpty {
+            addFavoritesSection(favorites)
+            menu.addItem(.separator())
+        }
 
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
-        menu.addItem(.separator())
-
-        let help = NSMenuItem(title: "AppSeed Help", action: #selector(showHelp), keyEquivalent: "")
+        let help = NSMenuItem(title: "Help", action: #selector(showHelp), keyEquivalent: "")
         help.target = self
         menu.addItem(help)
 
-        let about = NSMenuItem(title: "About AppSeed", action: #selector(showAbout), keyEquivalent: "")
-        about.target = self
-        menu.addItem(about)
-
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit AppSeed", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
     }
 
-    /// "My Apps" header + one entry per AppSeed-created app, each with an
-    /// Open / Show in Finder / Remove submenu.
-    private func addMyAppsSection() {
+    /// "My Apps" header + one launch item per favourited app. Only called when
+    /// there is at least one favourite (the menu stays clean otherwise).
+    private func addFavoritesSection(_ favorites: [WrappedApp]) {
         let header = NSMenuItem(title: "My Apps", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
 
-        let apps = WrappedAppsRegistry.installed()
-        guard !apps.isEmpty else {
-            let empty = NSMenuItem(title: "  No apps yet — create one above", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-            return
-        }
-
-        for app in apps {
-            let item = NSMenuItem(title: app.name, action: nil, keyEquivalent: "")
+        for app in favorites {
+            let item = NSMenuItem(title: app.name, action: #selector(openWrappedApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = app
             item.image = Self.appIcon(for: app.path)
-            item.submenu = makeAppSubmenu(for: app)
             menu.addItem(item)
         }
-    }
-
-    private func makeAppSubmenu(for app: WrappedApp) -> NSMenu {
-        let submenu = NSMenu()
-        submenu.autoenablesItems = false
-
-        let open = NSMenuItem(title: "Open", action: #selector(openWrappedApp(_:)), keyEquivalent: "")
-        open.target = self
-        open.representedObject = app
-        submenu.addItem(open)
-
-        let reveal = NSMenuItem(title: "Show in Finder", action: #selector(revealWrappedApp(_:)), keyEquivalent: "")
-        reveal.target = self
-        reveal.representedObject = app
-        submenu.addItem(reveal)
-
-        submenu.addItem(.separator())
-
-        let remove = NSMenuItem(title: "Remove…", action: #selector(removeWrappedApp(_:)), keyEquivalent: "")
-        remove.target = self
-        remove.representedObject = app
-        submenu.addItem(remove)
-
-        return submenu
+        // Full app management (favouriting, remove, updates) lives in
+        // Settings › My Apps — reachable via the Settings… item below.
     }
 
     /// A wrapped app's own icon, sized for a menu row.
@@ -157,61 +123,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - My Apps actions
 
+    /// Launch a favourited app straight from the menu.
     @objc private func openWrappedApp(_ sender: NSMenuItem) {
         guard let app = sender.representedObject as? WrappedApp else { return }
         NSWorkspace.shared.openApplication(at: app.path, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
     }
 
-    @objc private func revealWrappedApp(_ sender: NSMenuItem) {
-        guard let app = sender.representedObject as? WrappedApp else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([app.path])
-    }
-
-    @objc private func removeWrappedApp(_ sender: NSMenuItem) {
-        guard let app = sender.representedObject as? WrappedApp else { return }
-        NSApp.activate(ignoringOtherApps: true)
-
-        let confirm = NSAlert()
-        confirm.messageText = "Remove \(app.name)?"
-        confirm.informativeText = """
-        This moves \(app.name) and its saved logins and data to the Trash. \
-        You can restore it from the Trash until it's emptied.
-        """
-        confirm.alertStyle = .warning
-        confirm.addButton(withTitle: "Move to Trash")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-
-        do {
-            try WrappedAppsRegistry.remove(app)
-        } catch {
-            let failure = NSAlert()
-            failure.alertStyle = .critical
-            failure.messageText = "Couldn't remove \(app.name)"
-            failure.informativeText = error.localizedDescription
-            failure.addButton(withTitle: "OK")
-            failure.runModal()
-        }
-    }
-
     @objc private func showSettings() {
-        SettingsWindowController.shared.present()
-    }
-
-    @objc private func openInstallFolder() {
-        let directory = AppFactory.defaultInstallDirectory
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(directory)
-    }
-
-    @objc private func showAbout() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(
-                string: "Turn any website into a lightweight Mac app.",
-                attributes: [.font: NSFont.systemFont(ofSize: 11)]
-            ),
-        ])
+        SettingsWindowController.shared.present(selecting: .general)
     }
 
     @objc private func showHelp() {

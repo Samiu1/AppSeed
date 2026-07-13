@@ -140,6 +140,44 @@ final class HotkeyManager {
         carbonModifiers & (UInt32(cmdKey) | UInt32(optionKey) | UInt32(controlKey)) != 0
     }
 
+    /// The configured shortcut expressed for an NSMenuItem, so a menu row can
+    /// show it right-aligned like any native shortcut (e.g. "New App  ⌥P").
+    /// Display only — the always-on trigger stays the Carbon hotkey; the menu
+    /// item's own key equivalent only matters while AppSeed itself is active.
+    /// Returns an empty key for shortcuts we can't map (the row then shows no
+    /// glyph rather than a wrong one).
+    static func menuKeyEquivalent() -> (key: String, modifiers: NSEvent.ModifierFlags) {
+        let shortcut = configuredShortcut()
+        var flags: NSEvent.ModifierFlags = []
+        if shortcut.carbonModifiers & UInt32(controlKey) != 0 { flags.insert(.control) }
+        if shortcut.carbonModifiers & UInt32(optionKey) != 0 { flags.insert(.option) }
+        if shortcut.carbonModifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+        if shortcut.carbonModifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
+        return (keyEquivalentString(for: shortcut.keyCode), flags)
+    }
+
+    private static func keyEquivalentString(for keyCode: UInt32) -> String {
+        switch keyCode {
+        case UInt32(kVK_Space): return " "
+        case UInt32(kVK_Return): return "\r"
+        case UInt32(kVK_Tab): return "\t"
+        case UInt32(kVK_Delete): return "\u{8}"
+        case UInt32(kVK_ForwardDelete): return "\u{7F}"
+        case UInt32(kVK_Escape): return "\u{1B}"
+        case UInt32(kVK_LeftArrow): return String(UnicodeScalar(0xF702)!)
+        case UInt32(kVK_RightArrow): return String(UnicodeScalar(0xF703)!)
+        case UInt32(kVK_UpArrow): return String(UnicodeScalar(0xF700)!)
+        case UInt32(kVK_DownArrow): return String(UnicodeScalar(0xF701)!)
+        default:
+            // Letters/digits/punctuation reuse the single-ASCII display name.
+            let name = keyNames[keyCode] ?? ""
+            if name.count == 1, name.unicodeScalars.first?.isASCII == true {
+                return name.lowercased()
+            }
+            return ""
+        }
+    }
+
     static func describe(keyCode: UInt32, modifiers: UInt32) -> String {
         var parts = ""
         if modifiers & UInt32(controlKey) != 0 { parts += "⌃" }
