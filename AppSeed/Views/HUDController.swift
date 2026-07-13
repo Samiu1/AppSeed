@@ -8,13 +8,10 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     private var urlField: NSTextField?
     private var nameField: NSTextField?
     private var statusLabel: NSTextField?
-    private var pathButton: NSButton?
-    private var shortcutChip: NSButton?
 
     private var userEditedName = false
     private var isBuilding = false
     private var titleFetchTask: Task<Void, Never>?
-    private var shortcutKeyMonitor: Any?
 
     private static let defaultHint = "↩ create app   ·   esc dismiss"
 
@@ -31,7 +28,6 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     }
 
     func close() {
-        endShortcutRecording()
         titleFetchTask?.cancel()
         titleFetchTask = nil
         userEditedName = false
@@ -44,8 +40,6 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         urlField = nil
         nameField = nil
         statusLabel = nil
-        pathButton = nil
-        shortcutChip = nil
     }
 
     // MARK: - Panel construction
@@ -56,13 +50,6 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         let fieldWidth = HUDStyle.panelSize.width - HUDStyle.padding * 2
 
         content.addSubview(HUDControls.makeEyebrow("AppSeed", y: 24, width: fieldWidth))
-
-        let shortcutChip = HUDControls.makeShortcutChip(y: 20, panelWidth: HUDStyle.panelSize.width)
-        HUDControls.setShortcutChipTitle(
-            shortcutChip, text: HotkeyManager.configuredShortcut().displayString, recording: false)
-        shortcutChip.target = self
-        shortcutChip.action = #selector(beginShortcutRecording)
-        content.addSubview(shortcutChip)
         content.addSubview(HUDControls.makeFieldLabel("URL", y: 56, width: fieldWidth))
         let (urlContainer, urlField) = HUDControls.makeField(
             placeholder: "linear.app", y: 74, width: fieldWidth)
@@ -73,13 +60,7 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
             placeholder: "Linear", y: 146, width: fieldWidth)
         content.addSubview(nameContainer)
 
-        let pathButton = HUDControls.makePathButton(y: 196, width: fieldWidth)
-        HUDControls.setPathButtonTitle(pathButton, path: AppFactory.displayPath(for: AppFactory.defaultInstallDirectory))
-        pathButton.target = self
-        pathButton.action = #selector(selectInstallDirectory)
-        content.addSubview(pathButton)
-
-        let statusLabel = HUDControls.makeStatusLabel(y: 226, width: fieldWidth)
+        let statusLabel = HUDControls.makeStatusLabel(y: 196, width: fieldWidth)
         statusLabel.stringValue = Self.defaultHint
         content.addSubview(statusLabel)
 
@@ -92,57 +73,6 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         self.urlField = urlField
         self.nameField = nameField
         self.statusLabel = statusLabel
-        self.pathButton = pathButton
-        self.shortcutChip = shortcutChip
-    }
-
-    // MARK: - Shortcut recording
-
-    /// Click the chip → the next key combo pressed becomes the global
-    /// shortcut. Requires ⌘/⌥/⌃ so plain typing can't be captured; Esc
-    /// cancels. The local monitor is valid here because the HUD panel is key
-    /// while recording (the always-on trigger stays Carbon, in HotkeyManager).
-    @objc private func beginShortcutRecording() {
-        guard !isBuilding, shortcutKeyMonitor == nil, let shortcutChip else { return }
-        HUDControls.setShortcutChipTitle(shortcutChip, text: "press keys…", recording: true)
-        showStatus("Press the new shortcut (must include ⌘, ⌥, or ⌃) — esc cancels")
-        shortcutKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            self?.handleRecordingKeyDown(event)
-            return nil // consume — recording keys must not reach the fields
-        }
-    }
-
-    private func handleRecordingKeyDown(_ event: NSEvent) {
-        if event.keyCode == UInt16(53) { // esc — cancel recording only
-            endShortcutRecording()
-            showStatus(Self.defaultHint)
-            return
-        }
-        let modifiers = HotkeyManager.carbonModifiers(from: event.modifierFlags)
-        guard HotkeyManager.hasNonShiftModifier(modifiers) else {
-            showStatus("Add ⌘, ⌥, or ⌃ to the shortcut", isError: true)
-            return
-        }
-        do {
-            try HotkeyManager.shared.updateShortcut(
-                keyCode: UInt32(event.keyCode), carbonModifiers: modifiers)
-            endShortcutRecording()
-            showStatus("Shortcut set to \(HotkeyManager.configuredShortcut().displayString)")
-        } catch {
-            endShortcutRecording()
-            showStatus(error.localizedDescription, isError: true)
-        }
-    }
-
-    private func endShortcutRecording() {
-        if let shortcutKeyMonitor {
-            NSEvent.removeMonitor(shortcutKeyMonitor)
-            self.shortcutKeyMonitor = nil
-        }
-        if let shortcutChip {
-            HUDControls.setShortcutChipTitle(
-                shortcutChip, text: HotkeyManager.configuredShortcut().displayString, recording: false)
-        }
     }
 
     /// Clipboard is read ONCE on invoke, read-only, and never leaves this
@@ -311,27 +241,6 @@ final class HUDController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.urlField?.isEnabled = enabled
             self?.nameField?.isEnabled = enabled
-            self?.pathButton?.isEnabled = enabled
-        }
-    }
-
-    @objc private func selectInstallDirectory() {
-        guard !isBuilding else { return }
-        
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Choose Destination Folder"
-        openPanel.canChooseDirectories = true
-        openPanel.canChooseFiles = false
-        openPanel.allowsMultipleSelection = false
-        openPanel.canCreateDirectories = true
-        
-        NSApp.activate(ignoringOtherApps: true)
-        
-        if openPanel.runModal() == .OK, let selectedURL = openPanel.url {
-            AppFactory.defaultInstallDirectory = selectedURL
-            if let pathButton {
-                HUDControls.setPathButtonTitle(pathButton, path: AppFactory.displayPath(for: selectedURL))
-            }
         }
     }
 }

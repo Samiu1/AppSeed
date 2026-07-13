@@ -42,6 +42,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         openFolder.target = self
         menu.addItem(openFolder)
 
+        let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+
         menu.addItem(.separator())
 
         let help = NSMenuItem(title: "AppSeed Help", action: #selector(showHelp), keyEquivalent: "")
@@ -88,6 +92,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func showHUD() {
         hud.show()
+    }
+
+    @objc private func showSettings() {
+        SettingsWindowController.shared.present()
     }
 
     @objc private func openInstallFolder() {
