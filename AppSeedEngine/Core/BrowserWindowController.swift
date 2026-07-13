@@ -10,6 +10,7 @@ final class BrowserWindowController: NSWindowController {
     let webView: WKWebView
     private let config: AppConfig
     private let navigationCoordinator: NavigationCoordinator
+    private let notificationBridge = NotificationBridge()
     private var pageColorObservation: NSKeyValueObservation?
 
     init(config: AppConfig) {
@@ -42,8 +43,8 @@ final class BrowserWindowController: NSWindowController {
         // apps or Safari, and they survive regeneration of the same app.
         webConfiguration.websiteDataStore = .default()
         // Safari-like UA suffix improves compatibility with sites that sniff
-        // for a "real" browser. Hard-blocking identity providers are still
-        // routed out to ASWebAuthenticationSession by NavigationCoordinator.
+        // for a "real" browser — and is what clears Google's
+        // disallowed_useragent check so OAuth can complete in-window.
         webConfiguration.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
         webConfiguration.preferences.isElementFullscreenEnabled = true
         webConfiguration.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -65,6 +66,10 @@ final class BrowserWindowController: NSWindowController {
         super.init(window: window)
 
         navigationCoordinator.attach(to: webView)
+        // Bridge the web Notification API to native notifications. Added after
+        // super.init (needs self) but before the first load, so the shim
+        // injects at document start and the handler is present.
+        notificationBridge.install(into: webView.configuration.userContentController)
 
         // Blend the title-bar strip with the page: track WebKit's
         // under-page background color so the strip matches light and dark
@@ -98,6 +103,9 @@ final class BrowserWindowController: NSWindowController {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         ResourceInjector.installUserScripts(into: controller)
+        // removeAllUserScripts() also dropped the notification shim — re-add it
+        // (the message handler registration survives and isn't re-added).
+        notificationBridge.addUserScript(to: controller)
         webView.reload()
     }
 }

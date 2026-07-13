@@ -15,6 +15,7 @@ import Foundation
 ///   1 — initial engine.
 ///   2 — window drag/traffic-light fix; OAuth kept in-WebView (dropped the
 ///       ASWebAuthenticationSession hand-off).
+///   3 — web Notification API bridged to native UNUserNotificationCenter.
 enum EngineVersion {
-    static let current = 2
+    static let current = 3
 }
