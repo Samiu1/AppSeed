@@ -37,15 +37,21 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
 ## ✅ Done (shipped to `main`)
 
 - Original spec Phases 0–4: engine runtime (title-barless WKWebView, isolated
-  data store, SPA-aware navigation, OAuth via `ASWebAuthenticationSession`,
-  downloads, popups), factory clone pipeline, transient HUD, permissions.
+  data store, SPA-aware navigation, in-WebView OAuth, downloads, popups),
+  factory clone pipeline, transient HUD, permissions.
 - Window drag / traffic-light overlap fix; foreign-app overwrite protection;
   external `inject.js`/`custom.css` customization folders.
 - CI build workflow.
-- Menu bar status item + plain-language Help window + About.
+- Menu bar status item + plain-language Help window.
 - Custom leaf icon (app icon + menu bar template) from `Resources/leaf.svg`.
-- Settings window (shortcut recorder + install-location picker), moved out of HUD.
+- Settings window (tabbed: General | My Apps) — shortcut recorder,
+  install-location picker, Start at Login — all moved out of the HUD.
 - **Start at Login** toggle (`SMAppService`, `LoginItemManager.swift`).
+- **Dark-themed windows + custom About panel** (`AboutWindowController`) — all
+  app windows (Settings, Help, Update, About) use the HUD dark look.
+- **OAuth fix** — third-party logins (Google/Microsoft/Apple) stay in the app's
+  WebView; the `ASWebAuthenticationSession` hand-off was removed (it caused
+  "Invalid OAuth state"). See the design note in `NavigationCoordinator.swift`.
 
 ---
 
@@ -78,7 +84,12 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
    **Foreground `Notification` API only** — background service-worker Push
    remains out of scope (no push service / VAPID keys). Engine bumped to v3.
 4. [ ] **Icon preview in HUD** — show fetched site icon before create, with a
-   "choose your own image" option.
+   "choose your own image" option. (Started once, then reverted — nothing kept;
+   `IconBuilder.fetchBestIconData` / `installIcon(fromImageData:)` are the
+   natural hooks, plus a `customIconData` field on `FactoryRequest`. Note the
+   HUD dismisses on resign-key, so guard against teardown while an NSOpenPanel
+   is open. Update All / regeneration would not preserve a custom icon — decide
+   whether to persist it.)
 5. [ ] **First-run welcome** — teach the ⌥P interaction once on first launch.
 
 ### C. Distribution & updates (deferred — no paid Apple account yet)
@@ -106,7 +117,9 @@ Two update layers: **Layer 1 = AppSeed itself** (what you ship to users);
 
 ## Suggested next session
 
-Do **A (Google-login validation)** yourself — 10 min, decides whether the auth
-design holds. In parallel, a fresh chat can build **B1 → B2** ("My Apps" +
-"Update All Apps") as a set — they compound into the install-and-forget
-experience, and don't touch signing/distribution at all.
+The core, OAuth, My Apps, Update All, notifications, and window theming are all
+done. Remaining feature work is **B4 (icon preview)** and **B5 (first-run
+welcome)** — both self-contained UI. The bigger arc is **C (distribution)**:
+notarization + a native in-app updater, gated on getting the paid Apple
+Developer account. A quick, no-code win any time is the **real-app spot-check**
+(Notion / Figma / Slack / WhatsApp Web).
