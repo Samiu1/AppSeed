@@ -8,7 +8,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let hud: HUDController
     private var helpWindow: NSWindow?
-    private let shortcutHintItem = NSMenuItem()
+    private let menu = NSMenu()
 
     init(hud: HUDController) {
         self.hud = hud
@@ -19,23 +19,31 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.image = Self.menuBarIcon()
             button.toolTip = "AppSeed — turn any website into a Mac app"
         }
-        statusItem.menu = buildMenu()
+        menu.autoenablesItems = false
+        menu.delegate = self
+        populateMenu() // initial fill; rebuilt on every open by menuWillOpen
+        statusItem.menu = menu
     }
 
     // MARK: - Menu
 
-    private func buildMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        menu.delegate = self
+    /// Rebuilt on every open so the shortcut hint and the "My Apps" list stay
+    /// current (apps are created/removed while AppSeed runs).
+    private func populateMenu() {
+        menu.removeAllItems()
 
         let newApp = NSMenuItem(title: "New App…", action: #selector(showHUD), keyEquivalent: "")
         newApp.target = self
         menu.addItem(newApp)
 
-        shortcutHintItem.isEnabled = false
-        menu.addItem(shortcutHintItem)
+        let shortcutHint = NSMenuItem(
+            title: "Shortcut: \(HotkeyManager.configuredShortcut().displayString)",
+            action: nil, keyEquivalent: "")
+        shortcutHint.isEnabled = false
+        menu.addItem(shortcutHint)
 
+        menu.addItem(.separator())
+        addMyAppsSection()
         menu.addItem(.separator())
 
         let openFolder = NSMenuItem(title: "Open Apps Folder", action: #selector(openInstallFolder), keyEquivalent: "")
@@ -61,8 +69,60 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit AppSeed", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
+    }
 
-        return menu
+    /// "My Apps" header + one entry per AppSeed-created app, each with an
+    /// Open / Show in Finder / Remove submenu.
+    private func addMyAppsSection() {
+        let header = NSMenuItem(title: "My Apps", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let apps = WrappedAppsRegistry.installed()
+        guard !apps.isEmpty else {
+            let empty = NSMenuItem(title: "  No apps yet — create one above", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+
+        for app in apps {
+            let item = NSMenuItem(title: app.name, action: nil, keyEquivalent: "")
+            item.image = Self.appIcon(for: app.path)
+            item.submenu = makeAppSubmenu(for: app)
+            menu.addItem(item)
+        }
+    }
+
+    private func makeAppSubmenu(for app: WrappedApp) -> NSMenu {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+
+        let open = NSMenuItem(title: "Open", action: #selector(openWrappedApp(_:)), keyEquivalent: "")
+        open.target = self
+        open.representedObject = app
+        submenu.addItem(open)
+
+        let reveal = NSMenuItem(title: "Show in Finder", action: #selector(revealWrappedApp(_:)), keyEquivalent: "")
+        reveal.target = self
+        reveal.representedObject = app
+        submenu.addItem(reveal)
+
+        submenu.addItem(.separator())
+
+        let remove = NSMenuItem(title: "Remove…", action: #selector(removeWrappedApp(_:)), keyEquivalent: "")
+        remove.target = self
+        remove.representedObject = app
+        submenu.addItem(remove)
+
+        return submenu
+    }
+
+    /// A wrapped app's own icon, sized for a menu row.
+    private static func appIcon(for path: URL) -> NSImage {
+        let icon = NSWorkspace.shared.icon(forFile: path.path)
+        icon.size = NSSize(width: 16, height: 16)
+        return icon
     }
 
     /// The AppSeed leaf, rendered from Resources/MenuBarLeaf.png (built from
@@ -84,14 +144,54 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        // Refresh on every open — the user can re-record the shortcut at any time.
-        shortcutHintItem.title = "Shortcut: \(HotkeyManager.configuredShortcut().displayString)"
+        // Rebuild so the shortcut hint and the "My Apps" list reflect the
+        // current state (apps created/removed, shortcut re-recorded).
+        populateMenu()
     }
 
     // MARK: - Actions
 
     @objc private func showHUD() {
         hud.show()
+    }
+
+    // MARK: - My Apps actions
+
+    @objc private func openWrappedApp(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? WrappedApp else { return }
+        NSWorkspace.shared.openApplication(at: app.path, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
+    }
+
+    @objc private func revealWrappedApp(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? WrappedApp else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([app.path])
+    }
+
+    @objc private func removeWrappedApp(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? WrappedApp else { return }
+        NSApp.activate(ignoringOtherApps: true)
+
+        let confirm = NSAlert()
+        confirm.messageText = "Remove \(app.name)?"
+        confirm.informativeText = """
+        This moves \(app.name) and its saved logins and data to the Trash. \
+        You can restore it from the Trash until it's emptied.
+        """
+        confirm.alertStyle = .warning
+        confirm.addButton(withTitle: "Move to Trash")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try WrappedAppsRegistry.remove(app)
+        } catch {
+            let failure = NSAlert()
+            failure.alertStyle = .critical
+            failure.messageText = "Couldn't remove \(app.name)"
+            failure.informativeText = error.localizedDescription
+            failure.addButton(withTitle: "OK")
+            failure.runModal()
+        }
     }
 
     @objc private func showSettings() {
@@ -201,7 +301,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         heading("Removing an app")
         body("""
-        Drag it from the Applications folder to the Trash, like any Mac app.
+        Click the leaf icon, open My Apps, point at the app, and choose Remove — this moves the app and its saved logins to the Trash. (You can also drag it from the Applications folder to the Trash, like any Mac app.)
         """)
 
         return text
