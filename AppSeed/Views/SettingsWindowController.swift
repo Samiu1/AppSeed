@@ -1,37 +1,84 @@
 import AppKit
 
 /// A top-down (flipped) container so absolute frames can be measured from the
-/// top edge — stable regardless of how tall the tab area ends up.
+/// top edge — stable regardless of how tall the content area ends up.
 private final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
-/// Which Settings tab to show when opening.
+/// A clickable sidebar navigation row: icon + label with a selection pill.
+private final class SidebarRow: NSView {
+    private let iconView = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    var onClick: (() -> Void)?
+
+    override var isFlipped: Bool { true }
+
+    init(title: String, symbol: String, image: NSImage? = nil, width: CGFloat,
+         iconTintWhenIdle: NSColor = HUDStyle.secondaryText) {
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 34))
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        self.iconTintWhenIdle = iconTintWhenIdle
+
+        // A custom template image (e.g. the AppSeed leaf) takes precedence over
+        // the SF Symbol fallback.
+        iconView.image = image ?? NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        iconView.frame = NSRect(x: 12, y: 8, width: 18, height: 18)
+        iconView.imageScaling = .scaleProportionallyDown
+        addSubview(iconView)
+
+        label.stringValue = title
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.frame = NSRect(x: 38, y: 8, width: width - 46, height: 18)
+        label.lineBreakMode = .byTruncatingTail
+        addSubview(label)
+
+        setSelected(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    private var iconTintWhenIdle: NSColor = HUDStyle.secondaryText
+
+    func setSelected(_ selected: Bool) {
+        layer?.backgroundColor = (selected ? HUDStyle.fieldBackground : .clear).cgColor
+        label.textColor = selected ? HUDStyle.text : HUDStyle.secondaryText
+        iconView.contentTintColor = selected ? HUDStyle.accent : iconTintWhenIdle
+    }
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+}
+
+/// Which Settings section to show when opening.
 enum SettingsTab {
     case general
     case myApps
+    case about
 }
 
-/// AppSeed's Settings window: a two-tab window.
+/// AppSeed's Settings window: a sidebar + content-pane window.
 ///
 ///  - General: the global shortcut, start-at-login, and install location.
 ///  - My Apps: the full list of created apps, with favouriting (favourites are
 ///    what the menu bar shows), Show in Finder, Remove, and — only when some
 ///    app is on an older engine — Update All.
 ///
-/// A single shared instance is reused across opens.
+/// A single shared instance is reused across opens. The title bar is hidden
+/// (full-size content) so the sidebar runs edge-to-top with the traffic
+/// lights floating over it, matching the dark HUD aesthetic.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
-    private var tabView: NSTabView!
-
-    // General tab controls
+    // General controls
     private var startAtLoginCheckbox: NSButton!
     private var shortcutButton: NSButton!
     private var pathLabel: NSTextField!
     private var recordingMonitor: Any?
 
-    // My Apps tab controls
+    // My Apps controls
     private var appsListStack: FlippedView!
     private var appsScrollView: NSScrollView!
     private var updateStatusLabel: NSTextField!
@@ -39,63 +86,143 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// Backing array for the current rows; row buttons reference apps by tag.
     private var currentApps: [WrappedApp] = []
 
-    private let windowSize = NSSize(width: 540, height: 460)
+    // Layout / navigation
+    private var generalView: NSView!
+    private var myAppsView: NSView!
+    private var aboutView: NSView!
+    private var generalRow: SidebarRow!
+    private var myAppsRow: SidebarRow!
+    private var aboutRow: SidebarRow!
+
+    private let windowSize = NSSize(width: 640, height: 460)
+    private let sidebarWidth: CGFloat = 176
+    private let contentTopInset: CGFloat = 24
 
     private convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 540, height: 460)),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 640, height: 460)),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "AppSeed Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = HUDStyle.surface
         self.init(window: window)
         window.delegate = self
-        buildTabs()
+        buildLayout()
     }
 
-    /// Brings the window forward on the requested tab, refreshing everything.
+    /// Brings the window forward on the requested section, refreshing everything.
     func present(selecting tab: SettingsTab = .general) {
         refreshStartAtLogin()
         refreshShortcut()
         refreshPath()
         rebuildMyApps()
-        tabView.selectTabViewItem(at: tab == .general ? 0 : 1)
+        select(tab)
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }
 
-    // MARK: - Tabs
+    // MARK: - Layout
 
-    private func buildTabs() {
+    private var contentSize: NSSize {
+        NSSize(width: windowSize.width - sidebarWidth - 1, height: windowSize.height - contentTopInset)
+    }
+
+    private func buildLayout() {
         guard let content = window?.contentView else { return }
-        tabView = NSTabView(frame: content.bounds)
-        tabView.autoresizingMask = [.width, .height]
 
-        let general = NSTabViewItem(identifier: "general")
-        general.label = "General"
-        general.view = buildGeneralTab(size: tabContentSize())
-        tabView.addTabViewItem(general)
+        // Sidebar (darker), pinned to the full height on the left.
+        let sidebar = FlippedView(frame: NSRect(x: 0, y: 0, width: sidebarWidth, height: windowSize.height))
+        sidebar.autoresizingMask = [.height]
+        sidebar.wantsLayer = true
+        sidebar.layer?.backgroundColor = HUDStyle.sidebarBackground.cgColor
+        content.addSubview(sidebar)
+        buildSidebar(into: sidebar)
 
-        let myApps = NSTabViewItem(identifier: "myApps")
-        myApps.label = "My Apps"
-        myApps.view = buildMyAppsTab(size: tabContentSize())
-        tabView.addTabViewItem(myApps)
+        // Hairline separator between sidebar and content.
+        let divider = NSView(frame: NSRect(x: sidebarWidth, y: 0, width: 1, height: windowSize.height))
+        divider.autoresizingMask = [.height]
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
+        content.addSubview(divider)
 
-        content.addSubview(tabView)
+        // Content container fills the rest; each section view is placed below
+        // the (invisible) title-bar strip and toggled by selection.
+        let contentContainer = FlippedView(frame: NSRect(
+            x: sidebarWidth + 1, y: 0,
+            width: windowSize.width - sidebarWidth - 1, height: windowSize.height))
+        contentContainer.autoresizingMask = [.width, .height]
+        content.addSubview(contentContainer)
+
+        let contentFrame = NSRect(x: 0, y: contentTopInset, width: contentSize.width, height: contentSize.height)
+        generalView = buildGeneralTab(size: contentSize)
+        generalView.frame = contentFrame
+        myAppsView = buildMyAppsTab(size: contentSize)
+        myAppsView.frame = contentFrame
+        aboutView = buildAboutTab(size: contentSize)
+        aboutView.frame = contentFrame
+        contentContainer.addSubview(generalView)
+        contentContainer.addSubview(myAppsView)
+        contentContainer.addSubview(aboutView)
+
+        select(.general)
     }
 
-    /// Approximate usable area inside the tab view (strip + insets removed).
-    private func tabContentSize() -> NSSize {
-        NSSize(width: windowSize.width - 26, height: windowSize.height - 46)
+    private func buildSidebar(into sidebar: FlippedView) {
+        let rowWidth = sidebarWidth - 24
+        generalRow = SidebarRow(title: "General", symbol: "gearshape.fill", width: rowWidth)
+        generalRow.frame.origin = NSPoint(x: 12, y: 52)
+        generalRow.onClick = { [weak self] in self?.select(.general) }
+        sidebar.addSubview(generalRow)
+
+        myAppsRow = SidebarRow(title: "My Apps", symbol: "square.grid.2x2.fill", width: rowWidth)
+        myAppsRow.frame.origin = NSPoint(x: 12, y: 52 + 40)
+        myAppsRow.onClick = { [weak self] in self?.select(.myApps) }
+        sidebar.addSubview(myAppsRow)
+
+        aboutRow = SidebarRow(title: "About", symbol: "info.circle.fill", width: rowWidth)
+        aboutRow.frame.origin = NSPoint(x: 12, y: 52 + 80)
+        aboutRow.onClick = { [weak self] in self?.select(.about) }
+        sidebar.addSubview(aboutRow)
+
+        // Footer branding (non-interactive): the AppSeed leaf + version.
+        let footer = SidebarRow(title: "AppSeed \(Self.appShortVersion)", symbol: "leaf.fill",
+                                image: Self.brandLeafImage(), width: rowWidth,
+                                iconTintWhenIdle: HUDStyle.accent)
+        footer.frame.origin = NSPoint(x: 12, y: windowSize.height - 46)
+        sidebar.addSubview(footer)
     }
 
-    // MARK: - General tab
+    /// AppSeed's own leaf (Resources/MenuBarLeaf.png), as a template so it
+    /// tints. Falls back to the SF Symbol leaf if the asset is missing.
+    private static func brandLeafImage() -> NSImage? {
+        guard let url = Bundle.main.url(forResource: "MenuBarLeaf", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = true
+        return image
+    }
+
+    private func select(_ tab: SettingsTab) {
+        generalView?.isHidden = tab != .general
+        myAppsView?.isHidden = tab != .myApps
+        aboutView?.isHidden = tab != .about
+        generalRow?.setSelected(tab == .general)
+        myAppsRow?.setSelected(tab == .myApps)
+        aboutRow?.setSelected(tab == .about)
+    }
+
+    private static var appShortVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    // MARK: - General section
 
     private func buildGeneralTab(size: NSSize) -> NSView {
         let root = FlippedView(frame: NSRect(origin: .zero, size: size))
@@ -157,32 +284,77 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         resetButton.target = self
         resetButton.action = #selector(resetInstallLocation)
 
-        let separator3 = Self.separator(top: 314, width: width, inset: inset)
-        let versionLabel = Self.caption(
-            "AppSeed \(Self.appVersionString)", top: 328, width: width - 130, inset: inset)
-        let aboutButton = NSButton(frame: NSRect(x: size.width - inset - 120, y: 322, width: 120, height: 26))
-        aboutButton.title = "About AppSeed"
-        aboutButton.bezelStyle = .rounded
-        aboutButton.controlSize = .small
-        aboutButton.target = self
-        aboutButton.action = #selector(showAbout)
-
         [generalHeading, startAtLoginCheckbox, generalDesc, separator1,
          shortcutHeading, shortcutDesc, shortcutButton, separator2,
-         locationHeading, locationDesc, pathLabel, changeButton, resetButton,
-         separator3, versionLabel, aboutButton]
+         locationHeading, locationDesc, pathLabel, changeButton, resetButton]
             .forEach(root.addSubview)
         return root
     }
 
-    private static var appVersionString: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
-        return "version \(short)"
-    }
+    // MARK: - About section
 
-    @objc private func showAbout() {
-        AboutWindowController.shared.show()
+    /// Inline About pane: app icon, name, version/build, description, copyright,
+    /// centered in the content area.
+    private func buildAboutTab(size: NSSize) -> NSView {
+        let root = NSView(frame: NSRect(origin: .zero, size: size))
+        root.autoresizingMask = [.width, .height]
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width - 48),
+        ])
+
+        let iconView = NSImageView()
+        iconView.image = NSApp.applicationIconImage
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 72),
+            iconView.heightAnchor.constraint(equalToConstant: 72),
+        ])
+        stack.addArrangedSubview(iconView)
+        stack.setCustomSpacing(14, after: iconView)
+
+        let name = NSTextField(labelWithString: "AppSeed")
+        name.font = .systemFont(ofSize: 18, weight: .bold)
+        name.textColor = HUDStyle.text
+        name.alignment = .center
+        stack.addArrangedSubview(name)
+
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        let versionLabel = NSTextField(labelWithString: "Version \(version) (Build \(build))")
+        versionLabel.font = .systemFont(ofSize: 11)
+        versionLabel.textColor = HUDStyle.secondaryText
+        versionLabel.alignment = .center
+        stack.addArrangedSubview(versionLabel)
+        stack.setCustomSpacing(16, after: versionLabel)
+
+        let desc = NSTextField(wrappingLabelWithString: "Turn any website into a lightweight Mac app.")
+        desc.font = .systemFont(ofSize: 12)
+        desc.textColor = HUDStyle.text
+        desc.alignment = .center
+        desc.isEditable = false
+        desc.drawsBackground = false
+        desc.isBordered = false
+        desc.preferredMaxLayoutWidth = size.width - 96
+        stack.addArrangedSubview(desc)
+        stack.setCustomSpacing(16, after: desc)
+
+        let copyright = NSTextField(labelWithString: "© 2026 Samiul Islam")
+        copyright.font = .systemFont(ofSize: 10)
+        copyright.textColor = HUDStyle.secondaryText
+        copyright.alignment = .center
+        stack.addArrangedSubview(copyright)
+
+        return root
     }
 
     // MARK: - My Apps tab
