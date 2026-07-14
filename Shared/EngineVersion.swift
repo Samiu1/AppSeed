@@ -16,6 +16,9 @@ import Foundation
 ///   2 — window drag/traffic-light fix; OAuth kept in-WebView (dropped the
 ///       ASWebAuthenticationSession hand-off).
 ///   3 — web Notification API bridged to native UNUserNotificationCenter.
+///   4 — full main menu (File/Navigation/Window completion, page zoom,
+///       float-on-top, clear cache / clear website data); floating toolbar,
+///       loading bar, drag hint.
 enum EngineVersion {
-    static let current = 3
+    static let current = 4
 }
