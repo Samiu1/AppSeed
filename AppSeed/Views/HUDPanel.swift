@@ -5,6 +5,7 @@ import AppKit
 /// No gradients, no vibrancy, no neumorphic depth.
 enum HUDStyle {
     static let surface = NSColor(srgbRed: 0.110, green: 0.102, blue: 0.090, alpha: 1)      // warm charcoal
+    static let sidebarBackground = NSColor(srgbRed: 0.082, green: 0.076, blue: 0.067, alpha: 1) // darker than surface
     static let fieldBackground = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.07)
     static let accent = NSColor(srgbRed: 0.788, green: 0.482, blue: 0.294, alpha: 1)       // clay
     static let text = NSColor(srgbRed: 0.941, green: 0.922, blue: 0.890, alpha: 1)
