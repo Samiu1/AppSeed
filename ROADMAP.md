@@ -116,7 +116,8 @@ Two update layers: **Layer 1 = AppSeed itself** (what you ship to users);
 
 ### E. Engine (wrapped-app) UX polish
 The generated apps are edge-to-edge WKWebViews with hidden title bars — no
-browser chrome. Gaps to close:
+browser chrome. Gaps to close (implementation spec ready:
+`docs/specs/wrapped-app-chrome.md`, section H2 — do H1 first):
 
 - [ ] **Escape the "trapped" web experience** — no back/forward/reload except
   the obscure `⌘[` / `⌘]`. Add an **autohiding floating toolbar** (bottom-center
@@ -191,6 +192,39 @@ S1); incomplete hand-maintained public-suffix list in `DomainUtils.swift`
 (dependency-free approximation, known failure mode); regex HTML/title parsing
 (fragile but read-only, length-capped, sanitized). Secrets/config: clean.
 
+### H. Menu system (specs ready in `docs/specs/`)
+Translated from a Tauri-oriented menu PRD to native AppKit: NSMenu +
+target/action + responder chain instead of string-ID dispatch, native
+WKWebView APIs instead of `window.eval()`. Each spec is self-contained
+(exact files, full code listings, acceptance criteria) so it can be handed
+to a coding LLM as a single session.
+
+- [ ] **H1 · Engine main-menu completion** — `docs/specs/menu-system.md`.
+  Full App/File/Edit/View/Navigation/Window menus for wrapped apps: Services
+  + Hide Others, Clear Cache ⌥⌘E / Clear All Website Data (with mandatory
+  sign-out confirmation), Copy Current URL ⇧⌘C, page zoom ⌘0/⌘+/⌘− (via
+  `WKWebView.pageZoom`, persisted), Go Home ⇧⌘H, Float on Top (persisted,
+  checkmarked). Routing convention: web/window-state actions are nil-target
+  selectors on `BrowserWindowController` validated via `NSMenuItemValidation`
+  (distinct names — never WKWebView's own `goBack:`/`reload:`); app-level
+  actions stay on `EngineAppDelegate`. New file `EngineMainMenu.swift`.
+  **Bumps EngineVersion → 4.** Do this before H2.
+- [ ] **H2 · Wrapped-app chrome** — `docs/specs/wrapped-app-chrome.md`.
+  Implements all three section-E items: container content view, autohiding
+  floating back/forward/reload toolbar (nil-target, reuses H1 actions),
+  2pt `estimatedProgress` loading bar, titlebar-accessory drag-zone hint
+  (cursor + grabber; full-width gradient deliberately cut — private views).
+  New files `ProgressBarView.swift`, `FloatingToolbar.swift`.
+- [ ] **H3 · Help tab in Settings** — `docs/specs/help-modernization.md`.
+  Factory only (no engine bump). Deletes the NSTextView help window; adds a
+  Help sidebar tab reusing the Settings pattern, with a monospaced directory
+  tree for custom.css/inject.js and a live-refreshing shortcut string. New
+  file `HelpPane.swift`.
+- Deferred (deliberate): **wrapped-app Help menu** — no stable public help
+  URL while the repo may go private (revisit with C); **DevTools/Web
+  Inspector item** — needs `isInspectable` + entitlement decisions;
+  full-width titlebar drag gradient (fragile private-view hierarchy).
+
 ---
 
 ## Suggested next session
@@ -198,8 +232,11 @@ S1); incomplete hand-maintained public-suffix list in `DomainUtils.swift`
 Core, OAuth, My Apps, Update All, notifications, and window theming are done.
 Highest-leverage remaining work, roughly in order:
 
-- **E — engine UX** (back/forward toolbar, loading bar, drag-zone hint): the
-  most user-visible gap; wrapped apps currently feel "trapped."
+- **H1 → H2 → H3 — menu system + engine UX** (specs ready in `docs/specs/`):
+  H1 completes the wrapped-app main menu, H2 closes section E (toolbar,
+  loading bar, drag hint — the most user-visible gap; wrapped apps currently
+  feel "trapped"), H3 modernizes Help. Each spec is a single hand-off-ready
+  session.
 - **B4 / B5** — icon preview, first-run welcome: small, self-contained UI.
 - **G — security**: do **S1 (hardened runtime)** alongside **C (notarization)**
   since S1 enables it; the rest (S2–S8) are low-severity, local-only hardening.
