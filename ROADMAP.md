@@ -44,11 +44,12 @@ CI runs the same build + a `--make` smoke test on every push (`.github/workflows
 - CI build workflow.
 - Menu bar status item + plain-language Help window.
 - Custom leaf icon (app icon + menu bar template) from `Resources/leaf.svg`.
-- Settings window (tabbed: General | My Apps) — shortcut recorder,
-  install-location picker, Start at Login — all moved out of the HUD.
+- Settings window — **sidebar layout** (General | My Apps | About): shortcut
+  recorder, install-location picker, Start at Login, the apps manager, and an
+  inline About pane. Dark HUD look; brand-leaf footer.
 - **Start at Login** toggle (`SMAppService`, `LoginItemManager.swift`).
-- **Dark-themed windows + custom About panel** (`AboutWindowController`) — all
-  app windows (Settings, Help, Update, About) use the HUD dark look.
+- **Dark-themed windows** — all app windows (Settings, Help, Update) use the
+  HUD dark look. About is an inline Settings section (no separate window).
 - **OAuth fix** — third-party logins (Google/Microsoft/Apple) stay in the app's
   WebView; the `ASWebAuthenticationSession` hand-off was removed (it caused
   "Invalid OAuth state"). See the design note in `NavigationCoordinator.swift`.
@@ -113,13 +114,96 @@ Two update layers: **Layer 1 = AppSeed itself** (what you ship to users);
   building today, so this is convenience only.
 - [ ] **Intel / universal binary** — explicitly deferred by spec unless needed.
 
+### E. Engine (wrapped-app) UX polish
+The generated apps are edge-to-edge WKWebViews with hidden title bars — no
+browser chrome. Gaps to close:
+
+- [ ] **Escape the "trapped" web experience** — no back/forward/reload except
+  the obscure `⌘[` / `⌘]`. Add an **autohiding floating toolbar** (bottom-center
+  or top-right) with small back / forward / reload icons that fades after
+  inactivity. In `AppSeedEngine/Core/BrowserWindowController.swift`.
+- [ ] **Loading progress bar** — a thin (1–2px) Safari-style bar at the top of
+  the window while a page loads (observe `WKWebView.estimatedProgress`).
+- [ ] **Drag-zone discoverability** — the transparent top ~28pt title strip
+  gives no hint it's draggable. On hover, change the cursor / show a subtle
+  gradient hairline to reveal the drag zone.
+
+### F. HUD UX polish
+In `AppSeed/Views/HUDController.swift` + `HUDPanel.swift`:
+
+- [ ] **Active focus state** — fields set `focusRingType = .none` with no active
+  styling, so the focused field isn't obvious. On
+  `controlTextDidBeginEditing`/`EndEditing`, tint the field container's border
+  to the clay accent.
+- [ ] **Title-fetch feedback** — `TitleFetcher` runs 1–4s silently; users may
+  submit with the fallback domain name or think it's frozen. Show a spinner /
+  status ("Fetching site title…") while it runs.
+- [ ] **Placeholder contrast** — placeholder uses `secondaryText` (0.52 alpha)
+  on the charcoal surface; bump contrast for accessibility.
+- [ ] **Shortcut hint in HUD** — show the current hotkey (e.g. `⌥P`) in the
+  HUD's top-right to reinforce muscle memory. (Note: already surfaced in the
+  menu bar's "New App ⌥P" row.)
+
+### G. Security hardening
+Env-var-injection issues assume local presence — hardening, not remote holes —
+but S1 is the notarization enabler (ties to C).
+
+- [ ] **S1 · hardened runtime + library validation (Medium)** — all bundles are
+  signed `codesign --force --deep --sign -` with **no `-options runtime`**, so a
+  wrapped app (live sessions, camera/mic) is injectable via
+  `DYLD_INSERT_LIBRARIES`. Add `-options runtime` to the factory re-sign
+  (`AppFactory.swift`) and both `Scripts/build.sh` signings. `--deep` is
+  deprecated by Apple — sign nested code inside-out when moving to Developer ID.
+- [ ] **S2 · quarantine downloads / add save panel (Medium)** — engine isn't
+  sandboxed and has no `LSFileQuarantineEnabled`, so `WKDownload` files land in
+  `~/Downloads` without `com.apple.quarantine` (skip Gatekeeper), auto-saved with
+  no panel. Fix: sandbox the engine (quarantine becomes automatic) **or** set
+  `LSFileQuarantineEnabled` + apply the xattr; and/or present an `NSSavePanel`.
+  (`NavigationCoordinator.swift` download delegate.)
+- [ ] **S3 · scope down ATS (Low)** — factory Info.plist sets
+  `NSAllowsArbitraryLoads = true` (for http title/icon fetches). Drop the blanket
+  flag; scope `NSExceptionDomains` or let http fetches fail (fallbacks exist).
+  Mirror gap: the **engine** plist has no ATS block, so a wrapped `http://` site
+  won't load — worth fixing together.
+- [ ] **S4 · scope camera/mic prompts (Low)** — `requestMediaCapturePermissionFor`
+  ignores `origin` and always `.prompt`s. Only `.prompt` when the origin's
+  registrable domain == `appDomain`; `.deny` otherwise.
+- [ ] **S5 · cross-domain main-frame loads (Low / informational)** — by design,
+  cross-domain redirects/form posts render in the trusted chrome (OAuth/checkout
+  survival). Documented tradeoff; consider showing the real origin when
+  off-domain (ties to the E toolbar).
+- [ ] **S6 · inject.js/custom.css trust (Low)** — scripts load from an
+  unprotected `~/Library/Application Support/AppSeed/<id>/` into every page/frame.
+  Intentional feature; add a one-time in-app confirmation or note. (CSS path is
+  safe — percent-encoded into `textContent`.)
+- [ ] **S7 · sanitize download filename (Low)** — `appendingPathComponent(
+  suggestedFilename)` trusts WebKit to strip `/` and `..`. Add defense-in-depth
+  (reuse the `InputNormalizer` app-name sanitizing).
+- [ ] **S8 · show origin in JS dialogs (Low)** — `alert`/`confirm`/`prompt`
+  panels show page-controlled text with no origin, enabling official-looking
+  spoof dialogs. Prefix the requesting host.
+
+**Best-practice gaps (context):** no App Sandbox on the **engine** (the biggest
+containment win — small entitlement set: `network.client`,
+`files.downloads.read-write`, `device.camera`, `device.microphone`; the factory
+can't easily be sandboxed but the engine can); no notarization (see C, gated on
+S1); incomplete hand-maintained public-suffix list in `DomainUtils.swift`
+(dependency-free approximation, known failure mode); regex HTML/title parsing
+(fragile but read-only, length-capped, sanitized). Secrets/config: clean.
+
 ---
 
 ## Suggested next session
 
-The core, OAuth, My Apps, Update All, notifications, and window theming are all
-done. Remaining feature work is **B4 (icon preview)** and **B5 (first-run
-welcome)** — both self-contained UI. The bigger arc is **C (distribution)**:
-notarization + a native in-app updater, gated on getting the paid Apple
-Developer account. A quick, no-code win any time is the **real-app spot-check**
-(Notion / Figma / Slack / WhatsApp Web).
+Core, OAuth, My Apps, Update All, notifications, and window theming are done.
+Highest-leverage remaining work, roughly in order:
+
+- **E — engine UX** (back/forward toolbar, loading bar, drag-zone hint): the
+  most user-visible gap; wrapped apps currently feel "trapped."
+- **B4 / B5** — icon preview, first-run welcome: small, self-contained UI.
+- **G — security**: do **S1 (hardened runtime)** alongside **C (notarization)**
+  since S1 enables it; the rest (S2–S8) are low-severity, local-only hardening.
+- **C — distribution**: notarization + native in-app updater, gated on the paid
+  Apple Developer account.
+- Any-time no-code win: **real-app spot-check** (Notion / Figma / Slack /
+  WhatsApp Web).
