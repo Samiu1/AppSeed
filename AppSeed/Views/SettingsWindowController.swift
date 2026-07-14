@@ -14,14 +14,17 @@ private final class SidebarRow: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(title: String, symbol: String, width: CGFloat, iconTintWhenIdle: NSColor = HUDStyle.secondaryText) {
+    init(title: String, symbol: String, image: NSImage? = nil, width: CGFloat,
+         iconTintWhenIdle: NSColor = HUDStyle.secondaryText) {
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: 34))
         wantsLayer = true
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous
         self.iconTintWhenIdle = iconTintWhenIdle
 
-        iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        // A custom template image (e.g. the AppSeed leaf) takes precedence over
+        // the SF Symbol fallback.
+        iconView.image = image ?? NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         iconView.frame = NSRect(x: 12, y: 8, width: 18, height: 18)
         iconView.imageScaling = .scaleProportionallyDown
         addSubview(iconView)
@@ -189,11 +192,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         aboutRow.onClick = { [weak self] in self?.select(.about) }
         sidebar.addSubview(aboutRow)
 
-        // Footer branding (non-interactive): leaf + version, pinned bottom-left.
+        // Footer branding (non-interactive): the AppSeed leaf + version.
         let footer = SidebarRow(title: "AppSeed \(Self.appShortVersion)", symbol: "leaf.fill",
-                                width: rowWidth, iconTintWhenIdle: HUDStyle.accent)
+                                image: Self.brandLeafImage(), width: rowWidth,
+                                iconTintWhenIdle: HUDStyle.accent)
         footer.frame.origin = NSPoint(x: 12, y: windowSize.height - 46)
         sidebar.addSubview(footer)
+    }
+
+    /// AppSeed's own leaf (Resources/MenuBarLeaf.png), as a template so it
+    /// tints. Falls back to the SF Symbol leaf if the asset is missing.
+    private static func brandLeafImage() -> NSImage? {
+        guard let url = Bundle.main.url(forResource: "MenuBarLeaf", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = true
+        return image
     }
 
     private func select(_ tab: SettingsTab) {
