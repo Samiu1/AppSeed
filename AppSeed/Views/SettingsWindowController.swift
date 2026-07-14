@@ -53,6 +53,7 @@ private final class SidebarRow: NSView {
 enum SettingsTab {
     case general
     case myApps
+    case about
 }
 
 /// AppSeed's Settings window: a sidebar + content-pane window.
@@ -85,8 +86,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     // Layout / navigation
     private var generalView: NSView!
     private var myAppsView: NSView!
+    private var aboutView: NSView!
     private var generalRow: SidebarRow!
     private var myAppsRow: SidebarRow!
+    private var aboutRow: SidebarRow!
 
     private let windowSize = NSSize(width: 640, height: 460)
     private let sidebarWidth: CGFloat = 176
@@ -155,12 +158,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.autoresizingMask = [.width, .height]
         content.addSubview(contentContainer)
 
+        let contentFrame = NSRect(x: 0, y: contentTopInset, width: contentSize.width, height: contentSize.height)
         generalView = buildGeneralTab(size: contentSize)
-        generalView.frame = NSRect(x: 0, y: contentTopInset, width: contentSize.width, height: contentSize.height)
+        generalView.frame = contentFrame
         myAppsView = buildMyAppsTab(size: contentSize)
-        myAppsView.frame = NSRect(x: 0, y: contentTopInset, width: contentSize.width, height: contentSize.height)
+        myAppsView.frame = contentFrame
+        aboutView = buildAboutTab(size: contentSize)
+        aboutView.frame = contentFrame
         contentContainer.addSubview(generalView)
         contentContainer.addSubview(myAppsView)
+        contentContainer.addSubview(aboutView)
 
         select(.general)
     }
@@ -177,19 +184,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         myAppsRow.onClick = { [weak self] in self?.select(.myApps) }
         sidebar.addSubview(myAppsRow)
 
-        // Footer: leaf + version, opens the About window.
+        aboutRow = SidebarRow(title: "About", symbol: "info.circle.fill", width: rowWidth)
+        aboutRow.frame.origin = NSPoint(x: 12, y: 52 + 80)
+        aboutRow.onClick = { [weak self] in self?.select(.about) }
+        sidebar.addSubview(aboutRow)
+
+        // Footer branding (non-interactive): leaf + version, pinned bottom-left.
         let footer = SidebarRow(title: "AppSeed \(Self.appShortVersion)", symbol: "leaf.fill",
                                 width: rowWidth, iconTintWhenIdle: HUDStyle.accent)
         footer.frame.origin = NSPoint(x: 12, y: windowSize.height - 46)
-        footer.onClick = { [weak self] in self?.showAbout() }
         sidebar.addSubview(footer)
     }
 
     private func select(_ tab: SettingsTab) {
         generalView?.isHidden = tab != .general
         myAppsView?.isHidden = tab != .myApps
+        aboutView?.isHidden = tab != .about
         generalRow?.setSelected(tab == .general)
         myAppsRow?.setSelected(tab == .myApps)
+        aboutRow?.setSelected(tab == .about)
     }
 
     private static var appShortVersion: String {
@@ -265,8 +278,70 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return root
     }
 
-    private func showAbout() {
-        AboutWindowController.shared.show()
+    // MARK: - About section
+
+    /// Inline About pane: app icon, name, version/build, description, copyright,
+    /// centered in the content area.
+    private func buildAboutTab(size: NSSize) -> NSView {
+        let root = NSView(frame: NSRect(origin: .zero, size: size))
+        root.autoresizingMask = [.width, .height]
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width - 48),
+        ])
+
+        let iconView = NSImageView()
+        iconView.image = NSApp.applicationIconImage
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 72),
+            iconView.heightAnchor.constraint(equalToConstant: 72),
+        ])
+        stack.addArrangedSubview(iconView)
+        stack.setCustomSpacing(14, after: iconView)
+
+        let name = NSTextField(labelWithString: "AppSeed")
+        name.font = .systemFont(ofSize: 18, weight: .bold)
+        name.textColor = HUDStyle.text
+        name.alignment = .center
+        stack.addArrangedSubview(name)
+
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        let versionLabel = NSTextField(labelWithString: "Version \(version) (Build \(build))")
+        versionLabel.font = .systemFont(ofSize: 11)
+        versionLabel.textColor = HUDStyle.secondaryText
+        versionLabel.alignment = .center
+        stack.addArrangedSubview(versionLabel)
+        stack.setCustomSpacing(16, after: versionLabel)
+
+        let desc = NSTextField(wrappingLabelWithString: "Turn any website into a lightweight Mac app.")
+        desc.font = .systemFont(ofSize: 12)
+        desc.textColor = HUDStyle.text
+        desc.alignment = .center
+        desc.isEditable = false
+        desc.drawsBackground = false
+        desc.isBordered = false
+        desc.preferredMaxLayoutWidth = size.width - 96
+        stack.addArrangedSubview(desc)
+        stack.setCustomSpacing(16, after: desc)
+
+        let copyright = NSTextField(labelWithString: "© 2026 Samiul Islam")
+        copyright.font = .systemFont(ofSize: 10)
+        copyright.textColor = HUDStyle.secondaryText
+        copyright.alignment = .center
+        stack.addArrangedSubview(copyright)
+
+        return root
     }
 
     // MARK: - My Apps tab
