@@ -1,226 +1,173 @@
 # AppSeed
 
-AppSeed is a lightweight macOS utility that converts web applications into standalone, native macOS `.app` bundles in under a second. It runs as an invisible agent in the background, summoned instantly via a system-wide hotkey to turn any URL into a native macOS app.
+Turn any web app into a native macOS `.app`, in under a second, from a
+system-wide hotkey. Every generated app is a real bundle in `~/Applications`
+with its own icon, its own siloed login session, and no browser chrome.
 
-By wrapping sites in a highly optimized `WKWebView` container with custom configuration, AppSeed provides features like separate cookie/login storage per app, global hotkey summoning, custom scripting/styling injection, and seamless OAuth flow redirection.
+The sites you live in all day deserve better than a tab. Press `⌥P`, type a
+URL, hit Enter: AppSeed clones a pre-compiled engine bundle, customizes it
+for that site, signs it, and installs it. The result looks and behaves like a
+native app - separate cookies and Keychain per site, native notifications,
+real windows - and regenerating it never logs you out.
 
----
+## Quickstart
 
-## Table of Contents
-
-1. [Key Features](#key-features)
-2. [Tech Stack](#tech-stack)
-3. [Prerequisites](#prerequisites)
-4. [Getting Started](#getting-started)
-   - [Building from Source](#building-from-source)
-   - [Running the App](#running-the-app)
-5. [Architecture &amp; System Design](#architecture--system-design)
-   - [Directory Structure](#directory-structure)
-   - [App Generation Pipeline](#app-generation-pipeline)
-   - [Key Components](#key-components)
-6. [CLI &amp; Headless Usage](#cli--headless-usage)
-7. [Advanced Configuration](#advanced-configuration)
-   - [Custom Global Hotkey](#custom-global-hotkey)
-   - [Injecting CSS &amp; JS](#injecting-css--js)
-8. [Troubleshooting](#troubleshooting)
-
----
-
-## Key Features
-
-- **Summon via Hotkey**: Summons a floating Spotlight-like input card anywhere on your desktop via `⌥P` (Option + P).
-- **Sub-Second Generation**: Clones and builds a customized target application bundle atomically in under a second.
-- **Siloed Storage & Sessions**: Assigns each generated app a deterministic bundle identifier, keeping cookies, cache, and Keychain credentials siloed per site.
-- **Automatic Icon Building**: Downloads the website's best touch-icon or PNG and converts it to a native macOS `.icns` file using `sips` and `iconutil`.
-- **Title Fetching**: Queries the website's `<title>` in the background to automatically suggest a clean app name.
-- **OAuth Safety**: Intercepts known identity providers (Google, Microsoft, Apple, etc.) that block embedded web views and routes them through a secure, cookie-sharing `ASWebAuthenticationSession`.
-- **Script & Style Injection**: Allows tailoring wrapped sites (e.g., hiding sidebars/headers) by injecting custom CSS (`custom.css`) or JS (`inject.js`) on launch.
-- **Headless CLI**: Includes a hidden command-line interface (`AppSeed --make <url> ...`) for headless automation and testing.
-
----
-
-## Tech Stack
-
-- **Language**: Swift 5.10+ (compiled with `swiftc`)
-- **UI Framework**: AppKit (native macOS HUD and popups)
-- **Web Engine**: WebKit (`WKWebView`)
-- **System APIs**: Carbon (for the system-wide global hotkey), AuthenticationServices (`ASWebAuthenticationSession`)
-- **System Tools**: `sips` (image formatting), `iconutil` (assembling `.icns` packages), `codesign` (re-signing modified binaries), and `xattr` (removing Gatekeeper quarantine attributes)
-- **Target Architecture**: Apple Silicon (`arm64-apple-macos13.0`+)
-
----
-
-## Prerequisites
-
-- **macOS 13.0 (Ventura)** or higher.
-- **Apple Silicon** (M1/M2/M3/M4) Mac.
-- **Xcode Command Line Tools** installed (provides `swiftc`, `codesign`, `sips`, `iconutil`, and `xattr`).
-- **Accessibility Permissions** (optional but highly recommended): Prompted on first launch to allow Carbon to intercept the global hotkey when AppSeed is out of focus.
-
----
-
-## Getting Started
-
-### Building from Source
-
-To compile AppSeed and its blueprint engine, run the provided build script from the repository root:
+**You need:** macOS 13.0+, Apple Silicon, and the Xcode Command Line Tools
+(`xcode-select --install`).
 
 ```bash
+git clone https://github.com/Samiu1/AppSeed.git && cd AppSeed
+
+# Build AppSeedEngine.app + AppSeed.app (output lands in build/)
 ./Scripts/build.sh
+
+# Launch the background agent (no Dock icon; look for the leaf in the menu bar)
+open build/AppSeed.app
 ```
 
-This script:
+Press **`⌥P`**, type or paste a URL (`linear.app`, `notion.so`), hit
+**`Enter`**. The generated app is created in `~/Applications` and launched.
 
-1. Compiles the `AppSeedEngine` runtime blueprint and signs it.
-2. Compiles the main `AppSeed` factory application.
-3. Embeds `AppSeedEngine.app` into the resources of `AppSeed.app` so it can clone it at runtime.
-4. Generates both finished binaries under the `build/` folder.
-
-### Running the App
-
-1. Double-click `build/AppSeed.app` to launch the background agent.
-2. Grant Accessibility permissions if prompted (necessary for the global hotkey to work while you are focused in another application).
-3. Press **`⌥P`** (Option + P) to display the HUD input card.
-4. Type or paste a URL (e.g., `linear.app` or `notion.so`) and hit **`Enter`**.
-5. The generated app is instantly created in `~/Applications` and automatically launched.
-
----
-
-## Architecture & System Design
-
-### Directory Structure
-
-```
-AppSeed/
-├── AppSeed/                  # The factory application
-│   ├── App/                  # App delegate, permissions check, and hotkey management
-│   ├── Factory/              # Staging pipeline, CLI mode, icon/title fetching
-│   ├── Resources/            # Info.plist and default assets
-│   └── Views/                # HUD window (Spotlight card) manual layouts
-├── AppSeedEngine/            # The runtime engine blueprint (cloned by the factory)
-│   ├── Core/                 # Main delegate, browser controller, navigation logic
-│   ├── Inject/               # custom.css and inject.js injection system
-│   └── Resources/            # Default AppConfig.json template and Info.plist
-├── Shared/                   # Common structures (AppConfig, DomainUtils)
-├── Scripts/                  # build.sh and default icon builder script
-└── build/                    # Output directory for compiled applications
-```
-
-### App Generation Pipeline
-
-When you submit a URL in the HUD or via the CLI, the following pipeline executes:
-
-```mermaid
-graph TD
-    A[User Input / CLI Request] --> B[Normalize URL & Sanitize App Name]
-    B --> C[Locate Embedded Engine Blueprint]
-    C --> D[Create Atomic Staging Directory]
-    D --> E[Clone AppSeedEngine.app into Staging]
-    E --> F[Rename Executable binary inside bundle]
-    F --> G[Update Info.plist bundle ID & names]
-    G --> H[Write customized AppConfig.json]
-    H --> I[Fetch website touch-icon & build .icns via sips/iconutil]
-    I --> J[Remove quarantine xattrs & Ad-hoc Re-sign bundle]
-    J --> K[Move finished app to ~/Applications]
-    K --> L[Nudge Launch Services and Auto-launch]
-```
-
-### Key Components
-
-- **[AppFactory](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeed/Factory/AppFactory.swift>)**: Performs the atomic cloning pipeline. Every mutation happens in a temporary directory, ensuring a half-built bundle never reaches the destination.
-- **[HotkeyManager](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeed/App/HotkeyManager.swift>)**: Implements system-wide Carbon event handlers. Since Carbon works when the application is an out-of-focus background agent (`LSUIElement`), it is used instead of AppKit/SwiftUI keyboard monitors.
-- **[NavigationCoordinator](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeedEngine/Core/NavigationCoordinator.swift>)**: Restricts the main window to same-site navigation. Genuine user-initiated cross-site clicks hand off to the default browser. Popup requests (`window.open`) are opened in separate native windows sharing the cookie/session store.
-- **[IconBuilder](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeed/Factory/IconBuilder.swift>)**: Scrapes the site's touch-icons or HTML `<link rel="icon">` tags, downloads the image, and utilizes `sips` + `iconutil` to produce the multi-resolution `.icns` package.
-- **[ResourceInjector](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeedEngine/Inject/ResourceInjector.swift>)**: Scans the app bundle's resources at runtime. If `inject.js` or `custom.css` are found, it injects them via `WKUserContentController` at document end.
-
----
-
-## CLI & Headless Usage
-
-AppSeed contains a headless command-line mode for scripting or automated testing. When invoked with the `--make` argument, the process compiles the app without opening the HUD:
+Headless mode for scripting and CI, no HUD required:
 
 ```bash
-./build/AppSeed.app/Contents/MacOS/AppSeed --make <url> [--name <name>] [--out <directory>] [--overwrite]
-```
-
-### Arguments
-
-| Flag              | Description                                                    | Default                                                 |
-| ----------------- | -------------------------------------------------------------- | ------------------------------------------------------- |
-| `--make <url>`  | The URL of the web application to package.                     | *(Required)*                                          |
-| `--name <name>` | Custom name for the generated`.app`.                         | First label of the registrable domain (e.g.,`Linear`) |
-| `--out <dir>`   | Destination directory to install the app bundle.               | `~/Applications`                                      |
-| `--overwrite`   | Overwrites any existing application bundle with the same name. | Auto-renames by appending a number (e.g.,`App 2.app`) |
-
-### Example
-
-```bash
-# Packages Excalidraw, customizes its name, and overwrites any existing copy
 ./build/AppSeed.app/Contents/MacOS/AppSeed --make https://excalidraw.com --name "Excali" --overwrite
 ```
 
----
+## What AppSeed can do
 
-## Advanced Configuration
+| Feature | Status | What it does |
+|---------|--------|--------------|
+| URL to native app | Live | Clones the engine blueprint, customizes, ad-hoc signs, and installs in under a second |
+| Global hotkey (`⌥P`) | Live | Carbon `RegisterEventHotKey`, so it fires while AppSeed is unfocused; customizable via `defaults write` |
+| Siloed sessions | Live | Deterministic bundle id per domain keeps each app's cookies, cache, and Keychain separate - and alive across regeneration |
+| Automatic icons | Live | Scrapes the site's touch icon and builds a multi-resolution `.icns` with `sips` + `iconutil`; falls back to the AppSeed leaf |
+| Title suggestion | Live | Fetches the page `<title>` in the background; falls back to the domain name instantly |
+| Third-party OAuth | Live, validated on-device | Google/Microsoft/Apple sign-in stays inside the app's WebView so `state` and cookies never split across contexts |
+| Native notifications | Live | The web `Notification` API is bridged to `UNUserNotificationCenter`, with real permission state and click-through |
+| Popups, downloads, camera/mic | Live | `window.open` gets a real window sharing the session store; downloads land in `~/Downloads`; capture requests get native prompts |
+| Custom CSS/JS injection | Live | Per-app `inject.js` / `custom.css` in `~/Library/Application Support/AppSeed/<bundle id>/` |
+| My Apps + favorites | Live | Settings window lists every generated app; favorites pin to the menu bar; Remove trashes the app and its data |
+| Update All Apps | Live | Regenerates apps built on an older engine version, logins intact |
+| Start at Login | Live | Modern `SMAppService` login item, visible in System Settings |
+| Headless CLI | Live | `AppSeed --make <url>` for automation and end-to-end testing |
+| Background push (service workers) | Not built | Foreground `Notification` API only; no push service or VAPID keys |
 
-### Custom Global Hotkey
+## How it works
 
-You can customize the shortcut used to summon AppSeed by writing Carbon virtual key codes and modifier masks to the defaults database:
+Two Swift binaries, built with plain `swiftc` (no Xcode project, no
+dependencies):
 
-```bash
-defaults write com.appseed.factory hotkeyKeyCode -int <virtual-key-code>
-defaults write com.appseed.factory hotkeyModifiers -int <carbon-modifier-mask>
+- **AppSeed** - the factory. A background agent (`LSUIElement`, no Dock
+  icon) with a menu bar item, a Spotlight-style HUD, and the cloning
+  pipeline.
+- **AppSeedEngine** - the runtime blueprint. A hidden-title-bar window
+  filled edge-to-edge with `WKWebView`. Compiled once, embedded in the
+  factory, and cloned per generated app.
+
+```mermaid
+graph TD
+    A[User input / CLI request] --> B[Normalize URL and sanitize app name]
+    B --> C[Locate embedded engine blueprint]
+    C --> D[Create atomic staging directory]
+    D --> E[Clone AppSeedEngine.app into staging]
+    E --> F[Rename the executable inside the bundle]
+    F --> G[Update Info.plist: name + deterministic bundle id]
+    G --> H[Write AppConfig.json with engine version]
+    H --> I[Fetch site icon, build .icns via sips + iconutil]
+    I --> J[Strip quarantine xattrs, ad-hoc re-sign]
+    J --> K[Move finished bundle to ~/Applications]
+    K --> L[Refresh Launch Services and auto-launch]
 ```
 
-#### Modifier Key Mask Reference
+Everything happens in a temp directory; only a finished, signed bundle ever
+reaches `~/Applications`. Full details in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- **Option Key**: `2048`
-- **Command Key**: `256`
-- **Control Key**: `4096`
-- **Shift Key**: `512`
+## Quality: invariants, CI, and on-device validation
 
-*Example (changing hotkey to `⌥⌘S`):*
+AppSeed has no unit-test suite. Verification is three layers, each aimed at
+the failures that actually hurt:
 
-```bash
-# 1 = Key 'S' virtual key code
-defaults write com.appseed.factory hotkeyKeyCode -int 1
-# 2048 (Option) + 256 (Command) = 2304
-defaults write com.appseed.factory hotkeyModifiers -int 2304
-```
+1. **CI build on every push and PR** (macos-15): compiles both bundles,
+   verifies both code signatures, and checks the engine is embedded.
+2. **End-to-end smoke test in CI**: runs the real `--make` pipeline and
+   asserts the two invariants that keep the product trustworthy - the
+   generated bundle id is the deterministic
+   `com.appseed.wrapped.example-com` (logins survive regeneration), and the
+   quarantine attribute is gone (Gatekeeper does not kill the app).
+3. **On-device validation**: Google OAuth sign-in and persistence verified
+   on a real wrapped site. A broader pass over Notion, Figma, Slack, and
+   WhatsApp Web is still open - tracked in [ROADMAP.md](ROADMAP.md).
 
-### Injecting CSS & JS
+Suite inventory and how to run it: [docs/EVALUATIONS.md](docs/EVALUATIONS.md).
 
-To customize the styling or behavior of a generated app:
+## Product decisions and their tradeoffs
 
-1. Locate your generated app in `~/Applications` (e.g. `Linear.app`).
-2. Right-click and choose **Show Package Contents**.
-3. Navigate to `Contents/Resources/`.
-4. Create an `inject.js` and/or `custom.css` file.
-5. Add your custom styling/javascript. The next time the app opens, these modifications will be automatically applied.
+The short version; each decision has context and a revisit trigger in
+[docs/DECISIONS.md](docs/DECISIONS.md):
 
----
+| Decision | Tradeoff accepted |
+|----------|-------------------|
+| Clone a pre-compiled engine blueprint | Generated apps freeze on the engine that built them; "Update All Apps" is the fix |
+| Deterministic bundle id per domain, never a UUID | One app per domain; no second isolated copy of the same site |
+| Zero dependencies, system tools only | Hand-maintained public-suffix list; regex title parsing |
+| Apple Silicon only | Intel Macs are unsupported |
+| OAuth kept in the app's WebView | Embedded-webview OAuth depends on the desktop-Safari user agent clearing provider blocks |
+| Atomic staging + foreign-bundle guard | An overwrite of a non-AppSeed app is downgraded to auto-rename |
+| `~/Applications` as the default install location | Per-user install only; no system-wide `/Applications` default |
 
-## Troubleshooting
+## Deliberately not built
 
-### "Global shortcut unavailable"
+Background service-worker push, Intel/universal binaries, an Xcode project,
+third-party dependencies, notarization and Developer ID signing (deferred
+until a paid Apple Developer account), an in-app updater for AppSeed itself,
+and a live config channel for already-generated apps. Reasoning and
+sequencing live in [ROADMAP.md](ROADMAP.md), including the security
+hardening list (S1-S8) that gates distribution.
 
-This alert indicates another application has already registered the shortcut (default `⌥P`), or Carbon failed to initialize the keyboard hooks. You can:
+## Docs
 
-1. Clear conflicts in other apps or system settings.
-2. Change the AppSeed hotkey using the `defaults write` commands listed in [Custom Global Hotkey](#custom-global-hotkey).
-3. Open the app by double-clicking it directly in Finder.
+- [ROADMAP.md](ROADMAP.md) - status snapshot, shipped vs outstanding, security list
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - factory/engine model, generation pipeline, navigation policy
+- [docs/EVALUATIONS.md](docs/EVALUATIONS.md) - verification layers, CI inventory, validation status
+- [docs/DECISIONS.md](docs/DECISIONS.md) - decision log with tradeoffs and revisit triggers
+- [CONTRIBUTING.md](CONTRIBUTING.md) - build, conventions, and the do-not-break invariants
 
-### "App is damaged and can't be opened"
+## Commands
 
-If Gatekeeper throws this warning on launching a generated app, it is because macOS detected the `com.apple.quarantine` attribute on a newly created and ad-hoc signed app bundle.
+| Command | Description |
+|---------|-------------|
+| `./Scripts/build.sh` | Build both bundles into `build/` (arm64) |
+| `open build/AppSeed.app` | Launch the menu bar agent |
+| `AppSeed --make <url> [--name N] [--out DIR] [--overwrite]` | Headless app generation |
+| `defaults write com.appseed.factory hotkeyKeyCode -int <code>` | Change the hotkey key (default: `P`) |
+| `defaults write com.appseed.factory hotkeyModifiers -int <mask>` | Change the hotkey modifiers (Option=2048, Command=256, Control=4096, Shift=512) |
 
-- **Solution**: The factory's [stripQuarantineAndSign](<file:///Users/samiulislam/Documents/Samiul%20Personal/AppSeed/AppSeed/Factory/AppFactory.swift#L185-L199>) step handles this. Ensure AppSeed has permissions to run shell processes, or manually clear it via:
-  ```bash
-  xattr -d com.apple.quarantine "/path/to/YourApp.app"
-  ```
+## Advanced configuration
 
-### Google Sign-in 403 (disallowed_useragent)
+### Injecting CSS and JS
 
-Google blocks OAuth logins inside embedded web views (`WKWebView`).
+Each generated app gets a customization folder at
+`~/Library/Application Support/AppSeed/<bundle id>/`, created on first
+launch with commented `inject.js` and `custom.css` templates. Edit those
+files and relaunch the app; they apply to every page. The folder survives
+regenerating the app because the bundle id is deterministic per domain.
 
-- **Solution**: AppSeed's `NavigationCoordinator` automatically intercepts routing to `accounts.google.com` and executes it in `ASWebAuthenticationSession`. If a redirect fails to trigger, ensure the site's identity provider utilizes one of the domains listed in the `authDomains` constant.
+### Troubleshooting
+
+**"Global shortcut unavailable"**: another app has registered the hotkey, or
+Carbon failed to initialize. Change the shortcut with the `defaults write`
+commands above, or open the app directly from the menu bar item.
+
+**"App is damaged and can't be opened"**: the generated bundle kept its
+quarantine attribute. The factory's strip-and-sign step prevents this; to
+fix an affected app manually, run
+`xattr -d com.apple.quarantine "/path/to/YourApp.app"`.
+
+**Google sign-in shows `disallowed_useragent`**: AppSeed's engine presents a
+desktop-Safari user agent and keeps the whole OAuth flow inside the app's
+WebView, which clears this for the providers in `authProviders`
+(Google, Microsoft, Apple). If a site uses a different identity provider
+that blocks embedded views, that provider needs to be added to the list in
+`NavigationCoordinator.swift`.
