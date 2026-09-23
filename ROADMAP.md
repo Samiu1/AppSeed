@@ -105,8 +105,6 @@ Two update layers: **Layer 1 = AppSeed itself** (what you ship to users);
   version, prompt → download + self-replace. All native `URLSession`, no Sparkle
   (honors the no-dependency rule). On update, prompt "Update your apps too?" →
   runs **Update All Apps**.
-- [ ] **Make repo private** — GitHub → Settings → Danger Zone → Change
-  visibility (manual, 10s). No secrets in repo today; keep certs/notary creds out.
 
 ### D. Optional / lower priority
 - [ ] **Xcode workspace** — generate the two-target `.xcodeproj` + Copy Files
