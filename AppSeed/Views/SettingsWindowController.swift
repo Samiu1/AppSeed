@@ -57,6 +57,7 @@ enum SettingsTab {
     case general
     case myApps
     case about
+    case help
 }
 
 /// AppSeed's Settings window: a sidebar + content-pane window.
@@ -90,9 +91,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var generalView: NSView!
     private var myAppsView: NSView!
     private var aboutView: NSView!
+    private var helpView: NSView!
     private var generalRow: SidebarRow!
     private var myAppsRow: SidebarRow!
     private var aboutRow: SidebarRow!
+    private var helpRow: SidebarRow!
 
     private let windowSize = NSSize(width: 640, height: 460)
     private let sidebarWidth: CGFloat = 176
@@ -122,6 +125,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         refreshShortcut()
         refreshPath()
         rebuildMyApps()
+        rebuildHelp()
         select(tab)
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
@@ -171,8 +175,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.addSubview(generalView)
         contentContainer.addSubview(myAppsView)
         contentContainer.addSubview(aboutView)
+        helpView = HelpPane.build(size: contentSize,
+                                  shortcut: HotkeyManager.configuredShortcut().displayString)
+        helpView.frame = contentFrame
+        contentContainer.addSubview(helpView)
 
         select(.general)
+    }
+
+    /// The Help copy interpolates the current global shortcut — rebuild the
+    /// pane on every present so a re-recorded shortcut shows correctly.
+    private func rebuildHelp() {
+        guard let container = helpView?.superview else { return }
+        let frame = helpView.frame
+        helpView.removeFromSuperview()
+        helpView = HelpPane.build(size: contentSize,
+                                  shortcut: HotkeyManager.configuredShortcut().displayString)
+        helpView.frame = frame
+        container.addSubview(helpView)
     }
 
     private func buildSidebar(into sidebar: FlippedView) {
@@ -191,6 +211,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         aboutRow.frame.origin = NSPoint(x: 12, y: 52 + 80)
         aboutRow.onClick = { [weak self] in self?.select(.about) }
         sidebar.addSubview(aboutRow)
+
+        helpRow = SidebarRow(title: "Help", symbol: "questionmark.circle.fill", width: rowWidth)
+        helpRow.frame.origin = NSPoint(x: 12, y: 52 + 120)
+        helpRow.onClick = { [weak self] in self?.select(.help) }
+        sidebar.addSubview(helpRow)
 
         // Footer branding (non-interactive): the AppSeed leaf + version.
         let footer = SidebarRow(title: "AppSeed \(Self.appShortVersion)", symbol: "leaf.fill",
@@ -213,9 +238,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         generalView?.isHidden = tab != .general
         myAppsView?.isHidden = tab != .myApps
         aboutView?.isHidden = tab != .about
+        helpView?.isHidden = tab != .help
         generalRow?.setSelected(tab == .general)
         myAppsRow?.setSelected(tab == .myApps)
         aboutRow?.setSelected(tab == .about)
+        helpRow?.setSelected(tab == .help)
     }
 
     private static var appShortVersion: String {
